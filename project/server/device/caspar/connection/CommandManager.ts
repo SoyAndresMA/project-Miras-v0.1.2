@@ -7,6 +7,7 @@ export class CommandManager extends EventEmitter {
   private pendingCommands: Map<string, CommandQueueItem> = new Map();
   private responseBuffer: string = '';
   private commandTimeout: number;
+  private commandId: number = 0;
 
   constructor(
     private logger: Logger,
@@ -17,61 +18,103 @@ export class CommandManager extends EventEmitter {
   }
 
   async sendCommand(command: string): Promise<AMCPResponse> {
-    this.logger.debug(`📤 Enviando comando: ${command}`);
+    const commandId = ++this.commandId;
+    const fullCommand = `${commandId} ${command}`;
+    
+    // Asegurarse de que el comando termina con \r\n
+    const normalizedCommand = command.endsWith('\r\n') ? command : command + '\r\n';
+    
+    this.logger.debug(` Enviando comando [${commandId}]: ${command.trim()}`);
 
     return new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
-        this.pendingCommands.delete(command);
-        reject(new Error(`Command timeout: ${command}`));
+        if (this.pendingCommands.has(commandId.toString())) {
+          this.pendingCommands.delete(commandId.toString());
+          reject(new Error(`Command timeout: ${command.trim()}`));
+        }
       }, this.commandTimeout);
 
-      this.pendingCommands.set(command, {
+      this.pendingCommands.set(commandId.toString(), {
         resolve,
         reject,
-        command,
-        timeout: timeoutId
+        command: command.trim(),
+        timeout: timeoutId,
+        timestamp: Date.now()
       });
 
-      this.emit('command', command + '\r\n');
+      this.emit('command', normalizedCommand);
     });
   }
 
   handleData(data: Buffer): void {
     this.responseBuffer += data.toString();
 
-    let response: AMCPResponse | null;
-    while ((response = Parser.parseResponse(this.responseBuffer)) !== null) {
-      this.handleResponse(response);
-      this.responseBuffer = this.responseBuffer.substring(response.data.length);
+    // Procesar línea por línea
+    const lines = this.responseBuffer.split('\r\n');
+    this.responseBuffer = lines.pop() || ''; // Mantener la última línea incompleta
+
+    for (const line of lines) {
+      if (line.trim()) {
+        this.processResponseLine(line);
+      }
+    }
+  }
+
+  private processResponseLine(line: string): void {
+    try {
+      const response = Parser.parseResponse(line);
+      if (response) {
+        this.handleResponse(response);
+      }
+    } catch (error) {
+      this.logger.error('Error parsing response:', error);
     }
   }
 
   private handleResponse(response: AMCPResponse): void {
-    this.logger.debug(`📥 Respuesta recibida: ${JSON.stringify(response)}`);
+    this.logger.debug(` Respuesta recibida: ${JSON.stringify(response)}`);
 
-    // Buscar el comando pendiente correspondiente
-    for (const [command, pending] of this.pendingCommands.entries()) {
-      if (this.matchesCommand(command, response)) {
-        clearTimeout(pending.timeout);
-        this.pendingCommands.delete(command);
+    // Extraer el ID del comando de la respuesta si existe
+    const match = response.data.match(/^(\d+)\s/);
+    const commandId = match ? match[1] : null;
+    
+    // Si tenemos un ID, intentar emparejar con un comando pendiente
+    if (commandId && this.pendingCommands.has(commandId)) {
+      const pending = this.pendingCommands.get(commandId)!;
+      clearTimeout(pending.timeout);
+      this.pendingCommands.delete(commandId);
+
+      // Limpiar el ID del comando de la respuesta
+      response.data = response.data.replace(/^\d+\s/, '').trim();
+
+      if (response.code >= 400) {
+        pending.reject(new Error(`Command failed: ${response.data}`));
+      } else {
+        pending.resolve(response);
+      }
+    } else {
+      // Si no hay ID o no coincide con ningún comando pendiente,
+      // intentar emparejar con el comando más antiguo
+      const pendingCommands = Array.from(this.pendingCommands.entries());
+      if (pendingCommands.length > 0) {
+        // Ordenar por timestamp y tomar el más antiguo
+        pendingCommands.sort((a, b) => a[1].timestamp - b[1].timestamp);
+        const [oldestId, oldest] = pendingCommands[0];
+        
+        clearTimeout(oldest.timeout);
+        this.pendingCommands.delete(oldestId);
 
         if (response.code >= 400) {
-          pending.reject(new Error(`Command failed: ${response.data}`));
+          oldest.reject(new Error(`Command failed: ${response.data}`));
         } else {
-          pending.resolve(response);
+          oldest.resolve(response);
         }
-        return;
+      } else {
+        // Si no hay comandos pendientes, es una respuesta no solicitada
+        this.logger.warn(' Respuesta recibida sin comando pendiente:', response);
+        this.emit('unsolicited', response);
       }
     }
-
-    // Si llegamos aquí, es una respuesta sin comando pendiente
-    this.logger.warn('⚠️ Respuesta recibida sin comando pendiente:', response);
-    this.emit('unsolicited', response);
-  }
-
-  private matchesCommand(command: string, response: AMCPResponse): boolean {
-    // Implementar lógica de matching según el protocolo AMCP
-    return true; // Simplificado para el ejemplo
   }
 
   clearPendingCommands(): void {
@@ -80,5 +123,11 @@ export class CommandManager extends EventEmitter {
       pending.reject(new Error('Connection closed'));
     }
     this.pendingCommands.clear();
+    this.responseBuffer = '';
+    this.commandId = 0;
+  }
+
+  parseChannelInfo(info: string): any[] {
+    return Parser.parseChannelInfo(info);
   }
 }

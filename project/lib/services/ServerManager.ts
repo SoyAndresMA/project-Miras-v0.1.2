@@ -1,5 +1,5 @@
 import { DeviceConfig } from '@/lib/types/device';
-import { CasparServer } from '@/server/device/CasparServer';
+import { CasparServer } from '@/server/device/caspar/CasparServer';
 import EventBus from '@/lib/events/EventBus';
 
 class ServerManager {

@@ -1,6 +1,6 @@
 import { MItem, MItemType, MItemState } from '@/lib/types/item';
 import { CasparMClipConfig } from '@/lib/types/item';
-import { CasparServer } from '../device/CasparServer';
+import { CasparServer } from '@/server/device/caspar/CasparServer';
 import EventBus from '@/lib/events/EventBus';
 import MItemEventHandler from '@/lib/handlers/MItemEventHandler';
 

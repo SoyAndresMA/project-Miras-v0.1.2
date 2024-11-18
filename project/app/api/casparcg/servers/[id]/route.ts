@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import getDb from '@/db';
-import { CasparServer } from '@/server/device/CasparServer';
+import { CasparServer } from '@/server/device/caspar/CasparServer';
 
 export async function GET(
   request: Request,
@@ -20,7 +20,18 @@ export async function GET(
       );
     }
 
-    return NextResponse.json(server);
+    // Obtener el estado actual del servidor
+    let state = { connected: false };
+    try {
+      state = await CasparServer.getState(parseInt(params.id));
+    } catch (error) {
+      console.warn(`Could not get state for server ${params.id}:`, error);
+    }
+
+    return NextResponse.json({
+      ...server,
+      ...state
+    });
   } catch (error) {
     console.error('Error fetching CasparCG server:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -80,7 +91,37 @@ export async function DELETE(
 ) {
   try {
     const db = await getDb();
+    
+    // Verificar si el servidor existe
+    const server = await db.get(
+      'SELECT * FROM casparcg_servers WHERE id = ?',
+      params.id
+    );
+    
+    if (!server) {
+      return NextResponse.json(
+        { error: 'Server not found' },
+        { status: 404 }
+      );
+    }
+
+    // Intentar desconectar el servidor si está conectado
+    try {
+      const casparServer = CasparServer.getInstance({
+        id: server.id,
+        name: server.name,
+        host: server.host,
+        port: server.port,
+        enabled: false
+      });
+      await casparServer.disconnect();
+    } catch (error) {
+      console.warn(`Could not disconnect server ${params.id}:`, error);
+    }
+
+    // Eliminar el servidor de la base de datos
     await db.run('DELETE FROM casparcg_servers WHERE id = ?', params.id);
+
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Error deleting CasparCG server:', error);

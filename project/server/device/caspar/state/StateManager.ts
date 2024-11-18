@@ -1,77 +1,78 @@
 import { EventEmitter } from 'events';
-import { ServerStateData } from '../types';
-import { Channel } from '../Channel';
 import { Logger } from '../utils/Logger';
+import { Channel } from '../Channel';
+import { ServerStateData } from '../types';
 
 export class StateManager extends EventEmitter {
-  private version: string | null = null;
-  private channels: Map<number, Channel> = new Map();
-  private statusInterval: NodeJS.Timeout | null = null;
-  private updateInterval: number;
+  private state: ServerStateData = {
+    version: '',
+    channels: new Map(),
+    lastUpdate: 0
+  };
 
-  constructor(
-    private logger: Logger,
-    updateInterval: number = 1000
-  ) {
+  private updateInterval: NodeJS.Timeout | null = null;
+  private updateAttempts: number = 0;
+  private readonly MAX_UPDATE_ATTEMPTS = 3;
+  private readonly UPDATE_INTERVAL = 5000;
+  private readonly RETRY_DELAY = 30000;
+
+  constructor(private logger: Logger) {
     super();
-    this.updateInterval = updateInterval;
   }
 
   startStatusUpdates(): void {
-    if (this.statusInterval) {
-      this.logger.warn('⚠️ Estado ya está siendo actualizado');
-      return;
+    if (this.updateInterval) {
+      this.stopStatusUpdates();
     }
 
-    this.statusInterval = setInterval(() => {
-      this.emit('statusUpdate');
-    }, this.updateInterval);
+    this.updateAttempts = 0;
+    this.scheduleNextUpdate();
   }
 
   stopStatusUpdates(): void {
-    if (this.statusInterval) {
-      clearInterval(this.statusInterval);
-      this.statusInterval = null;
+    if (this.updateInterval) {
+      clearTimeout(this.updateInterval);
+      this.updateInterval = null;
     }
+    this.updateAttempts = 0;
+  }
+
+  private scheduleNextUpdate(): void {
+    const delay = this.updateAttempts >= this.MAX_UPDATE_ATTEMPTS ? 
+      this.RETRY_DELAY : this.UPDATE_INTERVAL;
+
+    this.updateInterval = setTimeout(() => {
+      this.emit('statusUpdate');
+      
+      // Solo incrementar intentos si estamos en modo de reintento
+      if (this.updateAttempts < this.MAX_UPDATE_ATTEMPTS) {
+        this.updateAttempts++;
+      }
+      
+      this.scheduleNextUpdate();
+    }, delay);
   }
 
   setVersion(version: string): void {
-    this.version = version;
-    this.emit('versionChanged', version);
+    this.state.version = version;
   }
 
   addChannel(channel: Channel): void {
-    this.channels.set(channel.number, channel);
-    this.emit('channelAdded', channel);
-  }
-
-  removeChannel(channelNumber: number): void {
-    const channel = this.channels.get(channelNumber);
-    if (channel) {
-      this.channels.delete(channelNumber);
-      this.emit('channelRemoved', channel);
-    }
-  }
-
-  getChannel(channelNumber: number): Channel | undefined {
-    return this.channels.get(channelNumber);
-  }
-
-  getAllChannels(): Channel[] {
-    return Array.from(this.channels.values());
-  }
-
-  clearState(): void {
-    this.version = null;
-    this.channels.clear();
-    this.emit('stateCleared');
+    this.state.channels.set(channel.id, channel);
   }
 
   getState(): ServerStateData {
-    return {
-      connected: true,
-      version: this.version,
-      channels: this.getAllChannels()
-    };
+    return this.state;
+  }
+
+  updateSuccess(): void {
+    this.updateAttempts = 0;
+    this.state.lastUpdate = Date.now();
+  }
+
+  updateFailed(): void {
+    if (this.updateAttempts >= this.MAX_UPDATE_ATTEMPTS) {
+      this.logger.warn('Máximo número de intentos alcanzado, esperando antes de reintentar');
+    }
   }
 }

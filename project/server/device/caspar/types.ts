@@ -21,7 +21,7 @@ export interface ConnectionOptions {
 export interface ServerStateData {
   connected: boolean;
   version: string | null;
-  channels: any[];
+  channels: ChannelInfo[];
 }
 
 export interface ConnectionState {
@@ -35,4 +35,28 @@ export interface CasparServerConfig extends DeviceConfig {
   reconnectDelay?: number;
   commandTimeout?: number;
   maxReconnectAttempts?: number;
+}
+
+export interface ChannelInfo {
+  id: number;
+  number: number;
+  resolution?: string;
+  frameRate?: number;
+  layers: LayerInfo[];
+}
+
+export interface LayerInfo {
+  number: number;
+  status: 'playing' | 'stopped' | 'paused';
+  media?: string;
+  foreground?: {
+    name: string;
+    type: string;
+    length: number;
+  };
+  background?: {
+    name: string;
+    type: string;
+    length: number;
+  };
 }

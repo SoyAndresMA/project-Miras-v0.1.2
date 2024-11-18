@@ -1,6 +1,6 @@
 import EventBus, { MItemEvent } from '../events/EventBus';
 import { CasparMClip } from '@/server/items/CasparMClip';
-import { CasparServer } from '@/server/device/CasparServer';
+import { CasparServer } from '@/server/device/caspar/CasparServer';
 
 class MItemEventHandler {
   private static instance: MItemEventHandler;

@@ -1,7 +1,7 @@
-import { LayerStatus } from '@/lib/types/device';
+import { LayerInfo } from './types';
 
 export class Channel {
-  private layers: Map<number, LayerStatus> = new Map();
+  private layers: Map<number, LayerInfo> = new Map();
 
   constructor(
     public readonly id: number,
@@ -10,16 +10,19 @@ export class Channel {
     public readonly frameRate: number
   ) {}
 
-  addLayer(layer: LayerStatus) {
+  addLayer(layer: LayerInfo) {
     this.layers.set(layer.number, layer);
   }
 
-  getLayer(layerNumber: number): LayerStatus | undefined {
-    const layer = this.layers.get(layerNumber);
-    return layer ? { ...layer } : undefined;
+  getLayer(layerNumber: number): LayerInfo | undefined {
+    return this.layers.get(layerNumber);
   }
 
-  updateLayerStatus(layerNumber: number, status: Partial<LayerStatus>) {
+  getLayers(): Map<number, LayerInfo> {
+    return new Map(this.layers);
+  }
+
+  updateLayerStatus(layerNumber: number, status: Partial<LayerInfo>) {
     const layer = this.layers.get(layerNumber);
     if (layer) {
       Object.assign(layer, status);
@@ -27,7 +30,7 @@ export class Channel {
     return layer;
   }
 
-  getLayers(): LayerStatus[] {
-    return Array.from(this.layers.values());
+  clearLayers() {
+    this.layers.clear();
   }
 }

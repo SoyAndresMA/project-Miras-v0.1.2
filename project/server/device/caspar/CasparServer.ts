@@ -1,5 +1,5 @@
-import { DeviceManager } from '../DeviceManager';
-import { CasparServerConfig, ConnectionOptions } from './types';
+import { DeviceManager } from '@/server/device/DeviceManager';
+import { CasparServerConfig, ConnectionOptions, ServerStateData } from './types';
 import { ConnectionManager } from './connection/ConnectionManager';
 import { CommandManager } from './connection/CommandManager';
 import { StateManager } from './state/StateManager';
@@ -8,13 +8,15 @@ import { Channel } from './Channel';
 
 export class CasparServer extends DeviceManager {
   private static instances: Map<number, CasparServer> = new Map();
+  
   private logger: Logger;
   private connectionManager: ConnectionManager;
   private commandManager: CommandManager;
   private stateManager: StateManager;
 
   constructor(config: CasparServerConfig) {
-    super();
+    super(config);
+    
     this.logger = new Logger(`CasparServer:${config.id}`);
     
     const connectionOptions: ConnectionOptions = {
@@ -28,24 +30,40 @@ export class CasparServer extends DeviceManager {
     this.stateManager = new StateManager(this.logger);
 
     this.setupEventListeners();
-    CasparServer.instances.set(config.id, this);
   }
 
-  static getInstance(id: number): CasparServer | undefined {
-    return CasparServer.instances.get(id);
+  static getInstance(config: CasparServerConfig): CasparServer {
+    let server = CasparServer.instances.get(config.id);
+    if (!server) {
+      server = new CasparServer(config);
+      CasparServer.instances.set(config.id, server);
+    }
+    return server;
   }
 
-  async connect(): Promise<boolean> {
+  static getState(serverId: number): Promise<ServerStateData> {
+    const server = CasparServer.instances.get(serverId);
+    if (!server) {
+      throw new Error(`Server ${serverId} not found`);
+    }
+    return Promise.resolve(server.stateManager.getState());
+  }
+
+  async initialize(): Promise<void> {
+    await this.connect();
+  }
+
+  async connect(): Promise<void> {
     try {
-      const connected = await this.connectionManager.connect();
-      if (connected) {
+      this.connected = await this.connectionManager.connect();
+      if (this.connected) {
         this.stateManager.startStatusUpdates();
         await this.initializeServerState();
       }
-      return connected;
     } catch (error) {
       this.logger.error('Error al conectar:', error);
-      return false;
+      this.connected = false;
+      throw error;
     }
   }
 
@@ -53,16 +71,21 @@ export class CasparServer extends DeviceManager {
     this.stateManager.stopStatusUpdates();
     this.commandManager.clearPendingCommands();
     await this.connectionManager.disconnect();
+    this.connected = false;
   }
 
   async sendCommand(command: string): Promise<any> {
-    if (!this.connectionManager.isConnected()) {
+    if (!this.isConnected()) {
       throw new Error('No conectado al servidor');
     }
-    return this.commandManager.sendCommand(command);
+
+    // Asegurarse de que el comando está en mayúsculas y sin \r\n
+    const normalizedCommand = command.trim().toUpperCase();
+    
+    return this.commandManager.sendCommand(normalizedCommand);
   }
 
-  getServerState(): any {
+  getServerState(): ServerStateData {
     return this.stateManager.getState();
   }
 
@@ -100,25 +123,31 @@ export class CasparServer extends DeviceManager {
     try {
       const infoResponse = await this.sendCommand('INFO');
       this.processChannelInfo(infoResponse.data);
+      this.stateManager.updateSuccess();
     } catch (error) {
       this.logger.error('Error al actualizar estado:', error);
+      this.stateManager.updateFailed();
     }
   }
 
   private processChannelInfo(info: string): void {
-    const channels = this.parseChannels(info);
-    for (const channelData of channels) {
-      const channel = new Channel(
-        channelData.id,
-        channelData.number,
-        channelData.resolution,
-        channelData.frameRate
-      );
-      this.stateManager.addChannel(channel);
+    try {
+      const channels = this.parseChannels(info);
+      for (const channelData of channels) {
+        const channel = new Channel(
+          channelData.id,
+          channelData.number,
+          channelData.resolution,
+          channelData.frameRate
+        );
+        this.stateManager.addChannel(channel);
+      }
+    } catch (error) {
+      this.logger.error('Error al procesar información de canales:', error);
     }
   }
 
   private parseChannels(info: string): any[] {
-    return [];
+    return this.commandManager.parseChannelInfo(info);
   }
 }

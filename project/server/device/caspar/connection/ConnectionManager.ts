@@ -5,7 +5,7 @@ import { Logger } from '../utils/Logger';
 
 export class ConnectionManager extends EventEmitter {
   private socket: net.Socket | null = null;
-  private connectPromise: Promise<void> | null = null;
+  private connectPromise: Promise<boolean> | null = null;
   private state: ConnectionState = {
     isConnected: false,
     reconnectAttempts: 0
@@ -28,36 +28,37 @@ export class ConnectionManager extends EventEmitter {
 
     if (this.connectPromise) {
       this.logger.info('⏳ Conexión en progreso, esperando...');
-      await this.connectPromise;
-      return this.state.isConnected;
+      return this.connectPromise;
     }
 
-    this.connectPromise = new Promise((resolve, reject) => {
+    this.connectPromise = new Promise<boolean>((resolve, reject) => {
       try {
         this.logger.debug('🔄 Creando nueva conexión de socket...');
         this.socket = new net.Socket();
-
         this.socket.setTimeout(this.options.timeout || 5000);
-
+        
         this.setupSocketListeners(resolve, reject);
         
         this.logger.debug(`🔄 Conectando a ${this.options.host}:${this.options.port}...`);
-        this.socket.connect(this.options.port, this.options.host);
+        this.socket.connect({
+          host: this.options.host,
+          port: this.options.port
+        });
 
       } catch (error) {
         this.logger.error('❌ Error al crear socket:', error);
         this.cleanup();
         reject(error);
       }
-    }).finally(() => {
-      this.connectPromise = null;
     });
 
     try {
-      await this.connectPromise;
-      return true;
+      const connected = await this.connectPromise;
+      this.connectPromise = null;
+      return connected;
     } catch (error) {
       this.logger.error('❌ Error en la conexión:', error);
+      this.connectPromise = null;
       return false;
     }
   }
@@ -68,10 +69,24 @@ export class ConnectionManager extends EventEmitter {
     if (this.socket) {
       try {
         this.logger.debug('🔄 Cerrando conexión de socket...');
-        this.socket.destroy();
-        this.socket = null;
+        this.socket.end();
+        await new Promise<void>((resolve) => {
+          if (this.socket) {
+            this.socket.once('close', () => resolve());
+            setTimeout(() => {
+              if (this.socket) {
+                this.socket.destroy();
+              }
+              resolve();
+            }, 1000);
+          } else {
+            resolve();
+          }
+        });
       } catch (error) {
         this.logger.error('❌ Error al cerrar socket:', error);
+      } finally {
+        this.socket = null;
       }
     }
 
@@ -81,7 +96,7 @@ export class ConnectionManager extends EventEmitter {
   }
 
   isConnected(): boolean {
-    return this.state.isConnected && this.socket !== null;
+    return this.state.isConnected && this.socket !== null && !this.socket.destroyed;
   }
 
   getSocket(): net.Socket | null {
@@ -94,7 +109,7 @@ export class ConnectionManager extends EventEmitter {
     // Timeout handler
     this.socket.on('timeout', () => {
       this.logger.error('⏰ Timeout de conexión');
-      this.socket?.destroy();
+      this.cleanup();
       reject(new Error('Connection timeout'));
     });
 
@@ -129,10 +144,10 @@ export class ConnectionManager extends EventEmitter {
   private cleanup(): void {
     if (this.socket) {
       this.socket.removeAllListeners();
+      this.socket.destroy();
       this.socket = null;
     }
     
     this.state.isConnected = false;
-    this.connectPromise = null;
   }
 }
