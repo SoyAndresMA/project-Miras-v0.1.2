@@ -23,8 +23,9 @@ export async function GET(
     return NextResponse.json(server);
   } catch (error) {
     console.error('Error fetching CasparCG server:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
-      { error: 'Failed to fetch server' },
+      { error: 'Failed to fetch server', details: errorMessage },
       { status: 500 }
     );
   }
@@ -65,8 +66,9 @@ export async function PUT(
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Error updating CasparCG server:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
-      { error: 'Failed to update server' },
+      { error: 'Failed to update server', details: errorMessage },
       { status: 500 }
     );
   }
@@ -82,8 +84,9 @@ export async function DELETE(
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Error deleting CasparCG server:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
-      { error: 'Failed to delete server' },
+      { error: 'Failed to delete server', details: errorMessage },
       { status: 500 }
     );
   }
@@ -111,7 +114,7 @@ export async function POST(
     }
 
     console.log('Found server:', server);
-    const casparServer = new CasparServer({
+    const casparServer = CasparServer.getInstance({
       id: server.id,
       name: server.name,
       host: server.host,
@@ -171,8 +174,9 @@ export async function POST(
     });
   } catch (error) {
     console.error('Error testing server connection:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
-      { error: 'Failed to test connection', details: error.message },
+      { error: 'Failed to test connection', details: errorMessage },
       { status: 500 }
     );
   }

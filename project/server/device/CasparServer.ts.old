@@ -65,153 +65,222 @@ export class CasparServer extends DeviceManager {
     return instance;
   }
 
+  static async getState(serverId: number): Promise<{
+    connected: boolean;
+    version: string | null;
+    channels: any[];
+  }> {
+    console.log(`🔍 Buscando instancia del servidor ${serverId}...`);
+    const instance = CasparServer.instances.get(serverId);
+    
+    if (!instance) {
+      console.error(`❌ No se encontró instancia del servidor ${serverId}`);
+      return {
+        connected: false,
+        version: null,
+        channels: []
+      };
+    }
+
+    console.log(`✅ Instancia encontrada para servidor ${serverId}, obteniendo estado...`);
+    return instance.getServerState();
+  }
+
   isServerConnected(): boolean {
     return this.isConnected && this.socket !== null;
   }
 
   async connect(): Promise<boolean> {
-    console.log(`Attempting to connect to CasparCG Server at ${this.config.host}:${this.config.port}`);
+    console.log(`🔌 Intentando conectar con servidor CasparCG ${this.config.name} en ${this.config.host}:${this.config.port}`);
     
     // Si ya está conectado, retornar true
     if (this.isConnected && this.socket) {
-      console.log('Already connected to server');
+      console.log('✅ Ya conectado al servidor');
       return true;
     }
 
     // Si hay una conexión en progreso, esperar a que termine
     if (this.connectPromise) {
-      console.log('Connection already in progress, waiting...');
+      console.log('⏳ Conexión en progreso, esperando...');
       await this.connectPromise;
       return this.isConnected;
     }
 
     this.connectPromise = new Promise((resolve, reject) => {
       try {
-        console.log('Creating new socket connection...');
+        console.log('🔄 Creando nueva conexión de socket...');
         this.socket = new net.Socket();
 
-        // Timeout de 5 segundos
+        // Configurar timeout de 5 segundos
         this.socket.setTimeout(5000);
 
-        this.socket.on('connect', () => {
-          console.log(`Connected successfully to ${this.config.host}:${this.config.port}`);
-          this.isConnected = true;
-          this.startStatusPolling();
-          resolve();
-        });
-
-        this.socket.on('error', (err) => {
-          console.error('Socket error:', err);
-          this.isConnected = false;
-          reject(err);
-        });
-
-        this.socket.on('close', () => {
-          console.log('Socket closed');
-          this.isConnected = false;
-          this.cleanup();
-        });
-
+        // Manejador de timeout
         this.socket.on('timeout', () => {
-          console.log('Socket timeout');
+          console.error('⏰ Timeout de conexión');
           this.socket?.destroy();
           reject(new Error('Connection timeout'));
         });
 
-        console.log(`Connecting to ${this.config.host}:${this.config.port}...`);
+        // Manejador de conexión exitosa
+        this.socket.on('connect', () => {
+          console.log(`✅ Conectado exitosamente a ${this.config.host}:${this.config.port}`);
+          this.isConnected = true;
+          this.startStatusPolling();
+          resolve(true);
+        });
+
+        // Manejador de errores
+        this.socket.on('error', (error) => {
+          console.error(`❌ Error de socket:`, error);
+          this.cleanup();
+          reject(error);
+        });
+
+        // Manejador de cierre de conexión
+        this.socket.on('close', () => {
+          console.log('🔌 Conexión cerrada');
+          this.cleanup();
+        });
+
+        // Intentar conectar
+        console.log(`🔄 Conectando a ${this.config.host}:${this.config.port}...`);
         this.socket.connect(this.config.port, this.config.host);
+
       } catch (error) {
-        console.error('Error during connection setup:', error);
-        this.isConnected = false;
+        console.error('❌ Error al crear socket:', error);
+        this.cleanup();
         reject(error);
       }
+    }).finally(() => {
+      this.connectPromise = null;
     });
 
     try {
       await this.connectPromise;
       return true;
     } catch (error) {
-      console.error('Connection failed:', error);
+      console.error('❌ Error en la conexión:', error);
       return false;
-    } finally {
-      this.connectPromise = null;
     }
   }
 
   async disconnect(): Promise<void> {
-    console.log('Disconnecting from server...');
-    if (this.socket) {
-      this.socket.destroy();
-      this.socket = null;
+    console.log(`🔌 Desconectando del servidor ${this.config.name}...`);
+    
+    if (this.statusInterval) {
+      console.log('⏹️ Deteniendo polling de estado');
+      clearInterval(this.statusInterval);
+      this.statusInterval = null;
     }
+
+    if (this.socket) {
+      try {
+        console.log('🔄 Cerrando conexión de socket...');
+        this.socket.destroy();
+        this.socket = null;
+      } catch (error) {
+        console.error('❌ Error al cerrar socket:', error);
+      }
+    }
+
     this.isConnected = false;
     this.connectPromise = null;
-    this.cleanup();
-    console.log('Disconnected from server');
+    console.log(`✅ Desconexión completada para ${this.config.name}`);
   }
 
   private cleanup() {
-    console.log('Cleaning up server resources...');
     if (this.statusInterval) {
       clearInterval(this.statusInterval);
       this.statusInterval = null;
     }
-    this.responseBuffer = '';
-    this.pendingCommands.clear();
+    
+    if (this.socket) {
+      this.socket.removeAllListeners();
+      this.socket = null;
+    }
+    
+    this.isConnected = false;
+    this.connectPromise = null;
   }
 
   // Método para reconectar si es necesario
   private async ensureConnection(): Promise<void> {
     if (!this.isConnected || !this.socket) {
-      await this.connect();
+      console.log(`🔄 Reconectando con servidor ${this.config.name}...`);
+      try {
+        await this.connect();
+      } catch (error) {
+        console.error(`❌ Error al reconectar con servidor ${this.config.name}:`, error);
+        throw new Error(`Failed to reconnect to server: ${error.message}`);
+      }
     }
   }
 
   async getVersion(): Promise<string> {
-    await this.ensureConnection();
-    return this.sendCommand('VERSION');
+    try {
+      console.log(`🔍 Obteniendo versión del servidor ${this.config.name}...`);
+      const response = await this.sendCommand('VERSION');
+      console.log(`✅ Versión del servidor ${this.config.name}:`, response);
+      return response.trim();
+    } catch (error) {
+      console.error(`❌ Error al obtener versión del servidor ${this.config.name}:`, error);
+      throw error;
+    }
   }
 
   async getSystemInfo(): Promise<string> {
-    await this.ensureConnection();
-    return this.sendCommand('INFO SYSTEM');
+    try {
+      console.log(`🔍 Obteniendo información del sistema para ${this.config.name}...`);
+      const response = await this.sendCommand('INFO SYSTEM');
+      console.log(`✅ Información del sistema para ${this.config.name}:`, response);
+      return response;
+    } catch (error) {
+      console.error(`❌ Error al obtener información del sistema para ${this.config.name}:`, error);
+      throw error;
+    }
   }
 
   private async sendCommand(command: string): Promise<string> {
+    console.log(`📤 Enviando comando al servidor ${this.config.name}: ${command}`);
+    
     if (!this.socket) {
+      console.error('❌ No hay conexión con el servidor');
       throw new Error('Not connected to server');
     }
 
+    await this.ensureConnection();
+
     return new Promise((resolve, reject) => {
-      let response = '';
-      
-      const dataHandler = (data: Buffer) => {
-        const chunk = data.toString();
-        console.log('Raw CasparCG data received:', chunk);
-        response += chunk;
+      try {
+        const commandId = Math.random().toString(36).substring(7);
+        
+        const timeout = setTimeout(() => {
+          console.error(`⏰ Timeout al esperar respuesta para comando: ${command}`);
+          this.pendingCommands.delete(commandId);
+          reject(new Error(`Command timeout: ${command}`));
+        }, 5000);
 
-        // Si la respuesta termina con un salto de línea, consideramos que está completa
-        if (response.endsWith('\r\n')) {
-          cleanup();
-          resolve(response.trim());
-        }
-      };
+        this.pendingCommands.set(commandId, {
+          resolve: (response) => {
+            clearTimeout(timeout);
+            console.log(`✅ Respuesta recibida para comando ${command}:`, response);
+            resolve(response);
+          },
+          reject: (error) => {
+            clearTimeout(timeout);
+            console.error(`❌ Error en comando ${command}:`, error);
+            reject(error);
+          },
+          command
+        });
 
-      const errorHandler = (error: Error) => {
-        cleanup();
+        console.log(`📤 Enviando comando ${commandId}: ${command}`);
+        this.socket.write(command + '\r\n');
+
+      } catch (error) {
+        console.error(`❌ Error al enviar comando ${command}:`, error);
         reject(error);
-      };
-
-      const cleanup = () => {
-        this.socket?.removeListener('data', dataHandler);
-        this.socket?.removeListener('error', errorHandler);
-      };
-
-      this.socket.on('data', dataHandler);
-      this.socket.on('error', errorHandler);
-
-      console.log('Sending command:', command);
-      this.socket.write(command + '\r\n');
+      }
     });
   }
 
@@ -271,8 +340,22 @@ export class CasparServer extends DeviceManager {
   }> {
     console.log(`🔍 Obteniendo estado del servidor ${this.config.name}...`);
     try {
-      await this.ensureConnection();
-      const version = await this.getVersion();
+      // Intentar conectar solo si no está conectado
+      if (!this.isConnected) {
+        await this.connect();
+      }
+      
+      // Obtener versión solo si estamos conectados
+      let version = null;
+      if (this.isConnected) {
+        try {
+          version = await this.getVersion();
+        } catch (versionError) {
+          console.warn(`⚠️ No se pudo obtener la versión del servidor ${this.config.name}:`, versionError);
+        }
+      }
+
+      // Mapear los canales con información detallada
       const channelsInfo = Array.from(this.channels.values()).map(channel => ({
         id: channel.id,
         number: channel.number,
@@ -281,17 +364,15 @@ export class CasparServer extends DeviceManager {
         layers: channel.getLayers()
       }));
 
-      console.log(`✅ Estado del servidor ${this.config.name}:`, {
-        connected: this.isConnected,
-        version,
-        channels: channelsInfo
-      });
-
-      return {
+      const state = {
         connected: this.isConnected,
         version,
         channels: channelsInfo
       };
+
+      console.log(`✅ Estado del servidor ${this.config.name}:`, state);
+      return state;
+
     } catch (error) {
       console.error(`❌ Error al obtener estado del servidor ${this.config.name}:`, error);
       return {
@@ -308,6 +389,19 @@ export class CasparServer extends DeviceManager {
   }> {
     console.log(`🔌 Probando conexión con servidor ${this.config.name}...`);
     try {
+      // Si ya está conectado, verificar que la conexión sigue activa
+      if (this.isConnected && this.socket) {
+        try {
+          const version = await this.getVersion();
+          console.log(`✅ Conexión existente válida con ${this.config.name}, versión:`, version);
+          return { connected: true, version };
+        } catch (error) {
+          console.warn(`⚠️ Conexión existente inválida con ${this.config.name}, intentando reconectar...`);
+          await this.disconnect();
+        }
+      }
+
+      // Intentar nueva conexión
       await this.connect();
       const version = await this.getVersion();
       
@@ -318,29 +412,17 @@ export class CasparServer extends DeviceManager {
       };
     } catch (error) {
       console.error(`❌ Error al conectar con servidor ${this.config.name}:`, error);
+      // Asegurar que la conexión se cierra en caso de error
+      try {
+        await this.disconnect();
+      } catch (disconnectError) {
+        console.warn(`⚠️ Error al desconectar después de fallo:`, disconnectError);
+      }
       return {
         connected: false,
         version: null
       };
     }
-  }
-
-  static async getState(serverId: number): Promise<{
-    connected: boolean;
-    version: string | null;
-    channels: any[];
-  }> {
-    const instance = CasparServer.instances.get(serverId);
-    if (!instance) {
-      console.error(`❌ No se encontró instancia del servidor ${serverId}`);
-      return {
-        connected: false,
-        version: null,
-        channels: []
-      };
-    }
-
-    return instance.getServerState();
   }
 
   async play(channel: number, layer: number, file: string): Promise<void> {
@@ -410,49 +492,40 @@ export class CasparServer extends DeviceManager {
   }
 
   private handleData(data: string) {
-    try {
-      // Log raw data for debugging
-      console.debug('Raw CasparCG data received:', data);
-      
-      this.responseBuffer += data;
+    console.log(`📥 Datos recibidos del servidor ${this.config.name}:`, data);
+    this.responseBuffer += data;
 
-      while (this.responseBuffer.includes('\r\n')) {
-        const lines = this.responseBuffer.split('\r\n');
-        this.responseBuffer = lines.pop() || '';
+    // Procesar todas las líneas completas en el buffer
+    while (true) {
+      const newlineIndex = this.responseBuffer.indexOf('\r\n');
+      if (newlineIndex === -1) break;
 
-        for (const line of lines) {
-          try {
-            // Skip empty lines
-            if (!line.trim()) continue;
+      const line = this.responseBuffer.substring(0, newlineIndex);
+      this.responseBuffer = this.responseBuffer.substring(newlineIndex + 2);
 
-            const response = this.parseResponse(line);
-            console.debug('Parsed response:', response);
-            
-            // Find the pending command that matches this response
-            for (const [id, { resolve, reject, command }] of this.pendingCommands) {
-              // More flexible matching - check if response contains any part of the command
-              const commandParts = command.split(' ');
-              const matchesCommand = commandParts.some(part => 
-                line.toLowerCase().includes(part.toLowerCase())
-              );
+      try {
+        const response = this.parseResponse(line);
+        console.log(`✅ Respuesta parseada:`, response);
 
-              if (matchesCommand) {
-                if (response.code >= 400) {
-                  reject(new Error(response.data));
-                } else {
-                  resolve(response.data);
-                }
-                this.pendingCommands.delete(id);
-                break;
-              }
-            }
-          } catch (error) {
-            console.error('Error parsing line:', line, error);
+        // Buscar el comando pendiente más antiguo para esta respuesta
+        for (const [commandId, { resolve, reject, command }] of this.pendingCommands) {
+          // Resolver el comando y eliminarlo de pendientes
+          this.pendingCommands.delete(commandId);
+          
+          if (response.code >= 400) {
+            console.error(`❌ Error del servidor para comando ${command}:`, response);
+            reject(new Error(`Server error ${response.code}: ${response.data}`));
+          } else {
+            console.log(`✅ Comando ${command} completado con éxito`);
+            resolve(response.data);
           }
+          
+          break; // Solo resolver un comando por respuesta
         }
+      } catch (error) {
+        console.error(`❌ Error al procesar respuesta:`, error);
+        // Continuar procesando el resto del buffer
       }
-    } catch (error) {
-      console.error('Error handling data:', error);
     }
   }
 }

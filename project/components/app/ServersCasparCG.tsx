@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { DeviceConfig } from '@/types/device';
+import { DeviceConfig } from '@/lib/types/device';
 import { useToast } from '@/components/ui/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ServersCasparCGList } from './ServersCasparCGList';
@@ -249,6 +249,15 @@ export function ServersCasparCG() {
     }
   };
 
+  const handleUpdateServer = (field: string | number | symbol, value: string | number) => {
+    if (selectedServer) {
+      setSelectedServer({
+        ...selectedServer,
+        [field]: value
+      });
+    }
+  };
+
   return (
     <Tabs defaultValue="list" className="h-full space-y-6">
       <TabsList>
@@ -273,6 +282,7 @@ export function ServersCasparCG() {
           onDelete={handleDelete}
           onConnectServer={handleConnectServer}
           onTestConnection={handleTestConnection}
+          onUpdateServer={handleUpdateServer}
         />
       </TabsContent>
     </Tabs>

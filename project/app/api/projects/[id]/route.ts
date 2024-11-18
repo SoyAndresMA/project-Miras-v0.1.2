@@ -58,9 +58,9 @@ export async function GET(
     `, params.id);
 
     // Format events with their unions and items
-    const formattedEvents = events.map(event => {
-      const eventItems = items.filter(item => item.event_id === event.id)
-        .map(item => ({
+    const formattedEvents = events.map((event: any) => {
+      const eventItems = items.filter((item: any) => item.event_id === event.id)
+        .map((item: any) => ({
           id: item.id,
           type: item.type,
           position_row: item.position_row,

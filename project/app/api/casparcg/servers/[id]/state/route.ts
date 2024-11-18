@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { CasparServer } from '@/server/device/CasparServer';
+import { CasparServer } from '@/server/device/caspar/CasparServer';
 import getDb from '@/db';
 
 export async function GET(
@@ -24,7 +24,7 @@ export async function GET(
     
     // Actualizar el estado en la base de datos
     await database.run(
-      'UPDATE devices SET connected = ?, version = ? WHERE id = ?',
+      'UPDATE casparcg_servers SET enabled = ?, version = ?, last_connection = CURRENT_TIMESTAMP WHERE id = ?',
       [state.connected ? 1 : 0, state.version || null, serverId]
     );
 

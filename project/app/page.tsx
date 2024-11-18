@@ -17,9 +17,9 @@ export default function Home() {
       setEvents(projectData.events || []);
     };
 
-    window.addEventListener('projectLoaded', handleProjectChange as EventListener);
+    window.addEventListener('projectLoaded', handleProjectChange as unknown as EventListener);
     return () => {
-      window.removeEventListener('projectLoaded', handleProjectChange as EventListener);
+      window.removeEventListener('projectLoaded', handleProjectChange as unknown as EventListener);
     };
   }, []);
 

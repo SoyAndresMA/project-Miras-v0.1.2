@@ -11,9 +11,10 @@ export interface DeviceConfig {
   is_shadow: boolean;
   enabled: boolean;
   version?: string;
-  channel_formats?: { [key: string]: string };
-  last_connection?: Date;
-  connected?: boolean;
+  channel_formats?: string;
+  last_connection?: string;
+  connected: boolean;
+  loading?: boolean;
 }
 
 export interface PlaybackStatus {
