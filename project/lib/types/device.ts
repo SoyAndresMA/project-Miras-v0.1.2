@@ -10,11 +10,16 @@ export interface DeviceConfig {
   locked_channel?: number;
   is_shadow: boolean;
   enabled: boolean;
+  connected: boolean;
   version?: string;
   channel_formats?: string;
   last_connection?: string;
-  connected: boolean;
   loading?: boolean;
+  // New connection settings
+  auto_reconnect?: boolean;
+  max_reconnect_attempts?: number;
+  reconnect_interval?: number;
+  connection_timeout?: number;
 }
 
 export interface PlaybackStatus {
