@@ -264,67 +264,83 @@ export class CasparServer extends DeviceManager {
     };
   }
 
-  async testConnection(): Promise<boolean> {
+  async getServerState(): Promise<{
+    connected: boolean;
+    version: string | null;
+    channels: any[];
+  }> {
+    console.log(`🔍 Obteniendo estado del servidor ${this.config.name}...`);
     try {
-      if (!this.socket || !this.isConnected) {
-        await this.connect();
-      }
-
-      // Try to get version as a simple test
+      await this.ensureConnection();
       const version = await this.getVersion();
-      console.log('CasparCG Version:', version);
-      return true;
+      const channelsInfo = Array.from(this.channels.values()).map(channel => ({
+        id: channel.id,
+        number: channel.number,
+        resolution: channel.resolution,
+        frameRate: channel.frameRate,
+        layers: channel.getLayers()
+      }));
+
+      console.log(`✅ Estado del servidor ${this.config.name}:`, {
+        connected: this.isConnected,
+        version,
+        channels: channelsInfo
+      });
+
+      return {
+        connected: this.isConnected,
+        version,
+        channels: channelsInfo
+      };
     } catch (error) {
-      console.error('Connection test failed:', error);
-      return false;
+      console.error(`❌ Error al obtener estado del servidor ${this.config.name}:`, error);
+      return {
+        connected: false,
+        version: null,
+        channels: []
+      };
     }
   }
 
-  private handleData(data: string) {
+  async testConnection(): Promise<{
+    connected: boolean;
+    version: string | null;
+  }> {
+    console.log(`🔌 Probando conexión con servidor ${this.config.name}...`);
     try {
-      // Log raw data for debugging
-      console.debug('Raw CasparCG data received:', data);
+      await this.connect();
+      const version = await this.getVersion();
       
-      this.responseBuffer += data;
-
-      while (this.responseBuffer.includes('\r\n')) {
-        const lines = this.responseBuffer.split('\r\n');
-        this.responseBuffer = lines.pop() || '';
-
-        for (const line of lines) {
-          try {
-            // Skip empty lines
-            if (!line.trim()) continue;
-
-            const response = this.parseResponse(line);
-            console.debug('Parsed response:', response);
-            
-            // Find the pending command that matches this response
-            for (const [id, { resolve, reject, command }] of this.pendingCommands) {
-              // More flexible matching - check if response contains any part of the command
-              const commandParts = command.split(' ');
-              const matchesCommand = commandParts.some(part => 
-                line.toLowerCase().includes(part.toLowerCase())
-              );
-
-              if (matchesCommand) {
-                if (response.code >= 400) {
-                  reject(new Error(response.data));
-                } else {
-                  resolve(response.data);
-                }
-                this.pendingCommands.delete(id);
-                break;
-              }
-            }
-          } catch (error) {
-            console.error('Error parsing line:', line, error);
-          }
-        }
-      }
+      console.log(`✅ Conexión exitosa con ${this.config.name}, versión:`, version);
+      return {
+        connected: true,
+        version
+      };
     } catch (error) {
-      console.error('Error handling data:', error);
+      console.error(`❌ Error al conectar con servidor ${this.config.name}:`, error);
+      return {
+        connected: false,
+        version: null
+      };
     }
+  }
+
+  static async getState(serverId: number): Promise<{
+    connected: boolean;
+    version: string | null;
+    channels: any[];
+  }> {
+    const instance = CasparServer.instances.get(serverId);
+    if (!instance) {
+      console.error(`❌ No se encontró instancia del servidor ${serverId}`);
+      return {
+        connected: false,
+        version: null,
+        channels: []
+      };
+    }
+
+    return instance.getServerState();
   }
 
   async play(channel: number, layer: number, file: string): Promise<void> {
@@ -391,5 +407,52 @@ export class CasparServer extends DeviceManager {
   onStatusChange(callback: (status: ServerStatus) => void): () => void {
     this.events.on('statusChange', callback);
     return () => this.events.off('statusChange', callback);
+  }
+
+  private handleData(data: string) {
+    try {
+      // Log raw data for debugging
+      console.debug('Raw CasparCG data received:', data);
+      
+      this.responseBuffer += data;
+
+      while (this.responseBuffer.includes('\r\n')) {
+        const lines = this.responseBuffer.split('\r\n');
+        this.responseBuffer = lines.pop() || '';
+
+        for (const line of lines) {
+          try {
+            // Skip empty lines
+            if (!line.trim()) continue;
+
+            const response = this.parseResponse(line);
+            console.debug('Parsed response:', response);
+            
+            // Find the pending command that matches this response
+            for (const [id, { resolve, reject, command }] of this.pendingCommands) {
+              // More flexible matching - check if response contains any part of the command
+              const commandParts = command.split(' ');
+              const matchesCommand = commandParts.some(part => 
+                line.toLowerCase().includes(part.toLowerCase())
+              );
+
+              if (matchesCommand) {
+                if (response.code >= 400) {
+                  reject(new Error(response.data));
+                } else {
+                  resolve(response.data);
+                }
+                this.pendingCommands.delete(id);
+                break;
+              }
+            }
+          } catch (error) {
+            console.error('Error parsing line:', line, error);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error handling data:', error);
+    }
   }
 }

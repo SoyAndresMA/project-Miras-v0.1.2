@@ -1,23 +1,36 @@
 import { NextResponse } from 'next/server';
-import { getServerState } from '@/lib/casparcg';
+import { CasparServer } from '@/server/device/CasparServer';
+import getDb from '@/db';
 
 export async function GET(
   request: Request,
   { params }: { params: { id: string } }
 ) {
+  console.log(' Verificando estado del servidor:', params.id);
   try {
     const serverId = parseInt(params.id);
     if (isNaN(serverId)) {
+      console.error(' ID de servidor inválido:', params.id);
       return NextResponse.json(
         { error: 'Invalid server ID' },
         { status: 400 }
       );
     }
 
-    const state = await getServerState(serverId);
+    const database = await getDb();
+    
+    // Obtener el estado del servidor usando CasparServer
+    const state = await CasparServer.getState(serverId);
+    
+    // Actualizar el estado en la base de datos
+    await database.run(
+      'UPDATE devices SET connected = ?, version = ? WHERE id = ?',
+      [state.connected ? 1 : 0, state.version || null, serverId]
+    );
+
     return NextResponse.json(state);
   } catch (error) {
-    console.error('Error getting server state:', error);
+    console.error(' Error al obtener estado del servidor:', error);
     return NextResponse.json(
       { error: 'Failed to get server state' },
       { status: 500 }
