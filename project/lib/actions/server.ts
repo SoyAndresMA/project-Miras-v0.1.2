@@ -3,7 +3,7 @@
 import { CasparServer } from '@/server/device/caspar/CasparServer';
 
 export async function getServerState() {
-  await CasparServer.getInstance({
+  const server = await CasparServer.getInstance({
     id: 1,
     name: 'LENOVO',
     host: '192.168.0.194',

@@ -97,7 +97,7 @@ export function MainLayout({ children, initialState }: MainLayoutProps) {
       }
     };
 
-    const interval = setInterval(checkForUpdates, 2000);
+    const interval = setInterval(checkForUpdates, 20000);
 
     return () => {
       mounted = false;

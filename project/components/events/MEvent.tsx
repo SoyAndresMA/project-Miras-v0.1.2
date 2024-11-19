@@ -6,6 +6,8 @@ import { MEvent, MEventUnion } from '@/lib/types/event';
 import { MEventUnionComponent } from './MEventUnion';
 import { CasparClip as CasparClipType } from '@/lib/types/item';
 import { CasparClip } from '@/components/items/CasparClip';
+import { useMainLayout } from "@/hooks/useMainLayout";
+import Logger from '@/lib/utils/logger';
 
 interface MEventProps {
   event: MEvent;
@@ -20,6 +22,7 @@ export default function MEventComponent({
 }: MEventProps) {
   const [isActive, setIsActive] = useState(false);
   const [activeRows, setActiveRows] = useState<Record<number, boolean>>({});
+  const { actions } = useMainLayout();
 
   // Función para generar claves únicas
   const generateUniqueKey = useCallback(() => {
@@ -47,10 +50,17 @@ export default function MEventComponent({
   };
 
   const toggleRow = (rowNumber: number) => {
+    const newState = !activeRows[rowNumber];
     setActiveRows(prev => ({
       ...prev,
-      [rowNumber]: !prev[rowNumber]
+      [rowNumber]: newState
     }));
+
+    // Log the action
+    Logger.getInstance().info('MEventUI', 'UserAction', `Row ${rowNumber} ${newState ? 'PLAY' : 'STOP'} clicked in event ${event.id}`);
+    
+    // Update dynamic info
+    actions.setDynamicInfo(`${newState ? 'Playing' : 'Stopped'} row ${rowNumber} in ${event.title}`);
   };
 
   const renderEmptySlots = (rowNumber: number, rowItems: CasparClipType[] = []) => {

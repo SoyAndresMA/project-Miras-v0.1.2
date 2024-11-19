@@ -2,7 +2,7 @@ import { EventEmitter } from 'events';
 import * as net from 'net';
 import { ConnectionConfig, ConnectionState } from '../types';
 import { Logger } from '../utils/Logger';
-import { CommandManager } from '../command/CommandManager';
+import { CommandManager } from './CommandManager';
 
 export class ConnectionManager extends EventEmitter {
   private socket: net.Socket | null = null;
@@ -10,16 +10,16 @@ export class ConnectionManager extends EventEmitter {
   private state: ConnectionState = {
     isConnected: false,
     reconnectAttempts: 0,
-    lastActivity: 0
+    lastActivity: Date.now()
   };
   private keepAliveInterval: NodeJS.Timeout | null = null;
   private activityCheckInterval: NodeJS.Timeout | null = null;
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private intentionalDisconnect: boolean = false;
   private connecting: boolean = false;
-  private readonly KEEP_ALIVE_INTERVAL = 30000; // 30 segundos
-  private readonly ACTIVITY_CHECK_INTERVAL = 5000; // 5 segundos
-  private readonly ACTIVITY_TIMEOUT = 60000; // 1 minuto sin actividad para considerar timeout
+  private readonly KEEP_ALIVE_INTERVAL = 60000;        // 1 minuto
+  private readonly ACTIVITY_CHECK_INTERVAL = 20000;    // 20 segundos
+  private readonly ACTIVITY_TIMEOUT = 180000;          // 3 minutos sin actividad
   private readonly MAX_RECONNECT_ATTEMPTS = 5;
   private readonly RECONNECT_DELAY = 5000; // 5 segundos
 
@@ -116,17 +116,35 @@ export class ConnectionManager extends EventEmitter {
   }
 
   private startKeepAlive() {
-    this.keepAliveInterval = setInterval(() => {
+    this.keepAliveInterval = setInterval(async () => {
       if (this.state.isConnected && this.socket) {
-        // Enviamos un comando INFO en lugar de VERSION para mantener viva la conexión
-        this.socket.write('INFO\r\n');
+        try {
+          this.logger.debug('ConnectionManager', 'KeepAlive', 'Enviando comando INFO para mantener conexión');
+          const response = await this.commandManager.sendCommand('INFO');
+          if (response) {
+            this.state.lastActivity = Date.now();
+            this.emit('activity', {
+              lastActivity: this.state.lastActivity,
+              isConnected: this.state.isConnected
+            });
+          }
+        } catch (error) {
+          this.logger.error('Error en keep-alive:', error);
+          this.reconnect();
+        }
       }
     }, this.KEEP_ALIVE_INTERVAL);
 
     this.activityCheckInterval = setInterval(() => {
       const inactiveTime = Date.now() - this.state.lastActivity;
+      this.logger.debug('ConnectionManager', 'ActivityCheck', 
+        `Última actividad hace ${Math.round(inactiveTime/1000)} segundos`
+      );
+      
       if (inactiveTime > this.ACTIVITY_TIMEOUT) {
-        this.logger.warn('Timeout de inactividad, reconectando...');
+        this.logger.warn('ConnectionManager', 'ActivityTimeout', 
+          `Sin actividad por ${Math.round(inactiveTime/1000)} segundos, reconectando...`
+        );
         this.reconnect();
       }
     }, this.ACTIVITY_CHECK_INTERVAL);
@@ -143,29 +161,25 @@ export class ConnectionManager extends EventEmitter {
     }
   }
 
-  private handleDisconnect() {
-    if (this.state.reconnectAttempts < this.MAX_RECONNECT_ATTEMPTS) {
-      this.state.reconnectAttempts++;
-      this.reconnectTimeout = setTimeout(() => {
-        this.reconnect();
-      }, this.RECONNECT_DELAY);
-    } else {
-      this.emit('maxReconnectAttemptsReached');
-    }
-  }
-
   private async reconnect() {
-    this.logger.info('Intentando reconectar...');
+    if (this.connecting) {
+      this.logger.info('Intentando reconectar...');
+      return;
+    }
+
+    if (this.state.isConnected) {
+      this.logger.info('Ya conectado');
+      return;
+    }
+
+    this.stopKeepAlive();
+    
     if (this.socket) {
       this.socket.destroy();
       this.socket = null;
     }
-    this.connectPromise = null;
-    try {
-      await this.connect();
-    } catch (error) {
-      this.logger.error('Error al reconectar:', error);
-    }
+
+    await this.connect();
   }
 
   async disconnect() {
@@ -187,8 +201,16 @@ export class ConnectionManager extends EventEmitter {
     this.connecting = false;
   }
 
+  getLastActivity(): number {
+    return this.state.lastActivity;
+  }
+
   isConnected(): boolean {
     return this.state.isConnected;
+  }
+
+  getReconnectAttempts(): number {
+    return this.state.reconnectAttempts;
   }
 
   async updateOptions(newOptions: ConnectionConfig): Promise<void> {

@@ -32,8 +32,8 @@ export async function GET(
       );
     }
 
-    // Solo obtener el estado si ya existe una instancia del servidor
-    await CasparServer.getInstance({
+    // Obtener la instancia del servidor y su estado actual
+    const server = await CasparServer.getInstance({
       id: serverConfig.id,
       name: serverConfig.name,
       host: serverConfig.host,
@@ -42,16 +42,14 @@ export async function GET(
       commandTimeout: serverConfig.command_timeout || 5000
     });
 
-    const serverState = await CasparServer.getState(serverConfig.id);
+    // Obtener el estado actual del servidor
+    const serverState = server.getServerState();
     
-    return NextResponse.json({
-      connected: serverState.connected,
-      version: serverState.version
-    });
+    return NextResponse.json(serverState);
   } catch (error) {
-    console.error(' Error al obtener estado del servidor:', error);
+    console.error(' Error al verificar estado:', error);
     return NextResponse.json(
-      { error: 'Failed to get server state' },
+      { error: 'Internal server error' },
       { status: 500 }
     );
   }

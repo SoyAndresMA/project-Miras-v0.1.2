@@ -1,5 +1,5 @@
 import React from 'react';
-import { DeviceConfig } from '@/types/device';
+import { DeviceConfig } from '@/lib/types/device';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,6 +15,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
+import { useServerState } from '@/hooks/useServerState';
 
 interface ServersCasparCGSettingsProps {
   selectedServer: DeviceConfig | null;
@@ -37,17 +38,23 @@ export const ServersCasparCGSettings: React.FC<ServersCasparCGSettingsProps> = (
   onUpdateServer,
   onCreateNew,
 }) => {
+  const { state, error } = useServerState(selectedServer?.id || 0);
+  const isConnected = state?.connected ?? false;
+  const lastActivity = state?.lastActivity ? new Date(state.lastActivity).toLocaleString() : 'N/A';
+
   if (!selectedServer) {
     return (
       <div className="flex flex-col items-center justify-center h-full space-y-4 p-8">
-        <Card className="w-full max-w-md">
+        <Card className="w-full max-w-md bg-gray-800 border-gray-700">
           <CardHeader>
-            <CardTitle>No Server Selected</CardTitle>
-            <CardDescription>Create a new server or select an existing one to configure</CardDescription>
+            <CardTitle className="text-white">No Server Selected</CardTitle>
+            <CardDescription className="text-white">
+              Create a new server or select an existing one to configure
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <Button 
-              className="w-full" 
+              className="w-full bg-gray-700 hover:bg-gray-600 text-white" 
               onClick={onCreateNew}
               size="lg"
             >
@@ -72,32 +79,45 @@ export const ServersCasparCGSettings: React.FC<ServersCasparCGSettingsProps> = (
   );
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-8 p-6">
       {/* Header with Actions */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">{selectedServer.name || 'New Server'}</h2>
-          <p className="text-muted-foreground">
+          <h2 className="text-2xl font-bold tracking-tight text-white">
+            {selectedServer.name || 'New Server'}
+          </h2>
+          <p className="text-gray-100">
             {selectedServer.description || 'Configure your CasparCG server settings'}
           </p>
         </div>
         <div className="flex items-center space-x-2">
           {/* Connection Status */}
           <Badge 
-            variant={selectedServer.connected ? "success" : "secondary"}
-            className="h-8 px-3 flex items-center space-x-2"
+            variant={isConnected ? "success" : "secondary"}
+            className="h-8 px-3 flex items-center space-x-2 bg-opacity-20"
           >
-            {selectedServer.connected ? (
+            {isConnected ? (
               <>
-                <Power className="h-4 w-4" />
-                <span>Connected</span>
+                <Power className="h-4 w-4 text-green-500" />
+                <span className="text-green-400">Connected</span>
               </>
             ) : (
               <>
-                <PowerOff className="h-4 w-4" />
-                <span>Disconnected</span>
+                <PowerOff className="h-4 w-4 text-gray-100" />
+                <span className="text-gray-100">Disconnected</span>
               </>
             )}
+          </Badge>
+          
+          {error && (
+            <Badge variant="destructive" className="h-8 px-3">
+              {error}
+            </Badge>
+          )}
+
+          {/* Last Activity */}
+          <Badge variant="outline" className="h-8 px-3">
+            Last Activity: {lastActivity}
           </Badge>
           
           {/* Quick Actions */}
@@ -105,7 +125,8 @@ export const ServersCasparCGSettings: React.FC<ServersCasparCGSettingsProps> = (
             variant="outline"
             size="sm"
             onClick={() => onConnectServer(selectedServer)}
-            disabled={isTesting || selectedServer.connected}
+            disabled={isTesting || isConnected}
+            className="border-gray-700 hover:bg-gray-800 text-white"
           >
             {isTesting ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -119,60 +140,67 @@ export const ServersCasparCGSettings: React.FC<ServersCasparCGSettingsProps> = (
             size="sm"
             onClick={onTestConnection}
             disabled={isTesting}
+            className="border-gray-700 hover:bg-gray-800 text-white"
           >
             <RefreshCw className={`h-4 w-4 ${isTesting ? 'animate-spin' : ''}`} />
           </Button>
         </div>
       </div>
 
-      <Separator />
+      <Separator className="bg-gray-700" />
 
       {/* Main Configuration Area */}
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid gap-8 md:grid-cols-2">
         {/* Basic Info */}
-        <Card>
+        <Card className="bg-gray-800 border-gray-700">
           <CardHeader>
-            <CardTitle>Basic Information</CardTitle>
-            <CardDescription>Essential server configuration</CardDescription>
+            <CardTitle className="text-white">Basic Information</CardTitle>
+            <CardDescription className="text-gray-100">
+              Essential server configuration
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="name">Server Name</Label>
+              <Label htmlFor="name" className="text-white">Server Name</Label>
               <Input
                 id="name"
                 value={selectedServer.name}
                 onChange={(e) => onUpdateServer('name', e.target.value)}
+                className="bg-gray-900 border-gray-700 text-white placeholder-gray-500"
                 placeholder="Production Server"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="host">Host Address</Label>
+              <Label htmlFor="host" className="text-white">Host Address</Label>
               <Input
                 id="host"
                 value={selectedServer.host}
                 onChange={(e) => onUpdateServer('host', e.target.value)}
+                className="bg-gray-900 border-gray-700 text-white placeholder-gray-500"
                 placeholder="localhost"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="port">AMCP Port</Label>
+              <Label htmlFor="port" className="text-white">AMCP Port</Label>
               <Input
                 id="port"
                 type="number"
                 value={selectedServer.port}
                 onChange={(e) => onUpdateServer('port', parseInt(e.target.value))}
+                className="bg-gray-900 border-gray-700 text-white placeholder-gray-500"
                 placeholder="5250"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
+              <Label htmlFor="description" className="text-white">Description</Label>
               <Input
                 id="description"
                 value={selectedServer.description || ''}
                 onChange={(e) => onUpdateServer('description', e.target.value)}
+                className="bg-gray-900 border-gray-700 text-white placeholder-gray-500"
                 placeholder="Main production server for live broadcasts"
               />
             </div>
@@ -180,211 +208,103 @@ export const ServersCasparCGSettings: React.FC<ServersCasparCGSettingsProps> = (
         </Card>
 
         {/* Advanced Settings */}
-        <Card>
+        <Card className="bg-gray-800 border-gray-700">
           <CardHeader>
-            <CardTitle>Advanced Settings</CardTitle>
-            <CardDescription>Additional configuration options</CardDescription>
+            <CardTitle className="text-white">Advanced Settings</CardTitle>
+            <CardDescription className="text-gray-100">
+              Additional configuration options
+            </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="preview_channel">Preview Channel</Label>
-                <Input
-                  id="preview_channel"
-                  type="number"
-                  value={selectedServer.preview_channel || ''}
-                  onChange={(e) => onUpdateServer('preview_channel', parseInt(e.target.value))}
-                  placeholder="2"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="locked_channel">Locked Channel</Label>
-                <Input
-                  id="locked_channel"
-                  type="number"
-                  value={selectedServer.locked_channel || ''}
-                  onChange={(e) => onUpdateServer('locked_channel', parseInt(e.target.value))}
-                  placeholder="1"
-                />
-              </div>
-            </div>
-
-            <div className="flex flex-col space-y-4 pt-4">
+          <CardContent className="space-y-6">
+            <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label>Server Status</Label>
-                  <p className="text-sm text-muted-foreground">Enable or disable this server</p>
+                  <Label className="text-white">Server Status</Label>
+                  <div className="text-sm text-gray-100">
+                    Enable or disable this server
+                  </div>
                 </div>
                 <Switch
                   checked={selectedServer.enabled}
                   onCheckedChange={(checked) => onUpdateServer('enabled', checked)}
+                  className="text-white"
                 />
               </div>
 
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label>Shadow Server</Label>
-                  <p className="text-sm text-muted-foreground">Use as backup/redundancy server</p>
+                  <Label className="text-white">Shadow Server</Label>
+                  <div className="text-sm text-gray-100">
+                    Mark this as a shadow server
+                  </div>
                 </div>
                 <Switch
                   checked={selectedServer.is_shadow}
                   onCheckedChange={(checked) => onUpdateServer('is_shadow', checked)}
+                  className="text-white"
                 />
               </div>
             </div>
-          </CardContent>
-        </Card>
-      </div>
 
-      {/* Connection Settings */}
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Connection Settings</CardTitle>
-            <CardDescription>Configure connection behavior</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Auto Reconnect</Label>
-                <p className="text-sm text-muted-foreground">Automatically attempt to reconnect on failure</p>
+            <div className="space-y-2">
+              <Label className="text-white">Server Information</Label>
+              <div className="space-y-2">
+                <div className="p-3 bg-gray-900 rounded-md">
+                  <div className="text-sm font-medium text-white">Version</div>
+                  <div className="text-white">
+                    {selectedServer.version || 'Not connected'}
+                  </div>
+                </div>
+                <div className="p-3 bg-gray-900 rounded-md">
+                  <div className="text-sm font-medium text-white">Channels</div>
+                  <div className="text-white">
+                    {selectedServer.channel_formats ? (
+                      selectedServer.channel_formats.split(',').map((format, i) => (
+                        <div key={i} className="text-white">Channel {i + 1}: {format}</div>
+                      ))
+                    ) : (
+                      'Not connected'
+                    )}
+                  </div>
+                </div>
               </div>
-              <Switch
-                checked={selectedServer.auto_reconnect ?? true}
-                onCheckedChange={(checked) => onUpdateServer('auto_reconnect', checked)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="reconnect_attempts">Max Reconnection Attempts</Label>
-              <Input
-                id="reconnect_attempts"
-                type="number"
-                value={selectedServer.max_reconnect_attempts ?? 3}
-                onChange={(e) => onUpdateServer('max_reconnect_attempts', parseInt(e.target.value))}
-                min={1}
-                max={10}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="reconnect_interval">Reconnection Interval (seconds)</Label>
-              <Input
-                id="reconnect_interval"
-                type="number"
-                value={selectedServer.reconnect_interval ?? 30}
-                onChange={(e) => onUpdateServer('reconnect_interval', parseInt(e.target.value))}
-                min={5}
-                max={300}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="connection_timeout">Connection Timeout (seconds)</Label>
-              <Input
-                id="connection_timeout"
-                type="number"
-                value={selectedServer.connection_timeout ?? 10}
-                onChange={(e) => onUpdateServer('connection_timeout', parseInt(e.target.value))}
-                min={1}
-                max={60}
-              />
             </div>
           </CardContent>
         </Card>
       </div>
-
-      {/* Server Status and Channels */}
-      {selectedServer.connected && (
-        <div className="grid gap-6 md:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Channel Configuration</CardTitle>
-              <CardDescription>Available channels and formats</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {selectedServer.channel_formats ? (
-                <div className="space-y-2">
-                  {selectedServer.channel_formats.split(',').map((channel, index) => (
-                    <div key={index} className="flex items-center justify-between p-2 bg-secondary/50 rounded-lg">
-                      <span className="font-medium">Channel {index + 1}</span>
-                      <Badge variant="secondary">{channel}</Badge>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-muted-foreground text-center py-4">No channels configured</p>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Server Status</CardTitle>
-              <CardDescription>Current server information</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {selectedServer.version && (
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Version</span>
-                  <Badge variant="outline">{selectedServer.version}</Badge>
-                </div>
-              )}
-
-              {selectedServer.last_connection && (
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Last Connected</span>
-                  <span className="text-sm text-muted-foreground">
-                    {new Date(selectedServer.last_connection).toLocaleString()}
-                  </span>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Connection History */}
-      {selectedServer.connected && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Connection History</CardTitle>
-            <CardDescription>Recent connection events</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ConnectionHistory serverId={selectedServer.id} />
-          </CardContent>
-        </Card>
-      )}
 
       {/* Action Buttons */}
-      <div className="flex justify-end space-x-4 pt-6">
-        <Button
-          variant="outline"
-          onClick={onCreateNew}
-          disabled={isTesting}
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          New Server
-        </Button>
-
+      <div className="flex justify-between pt-6 border-t border-gray-700">
         <Button
           variant="destructive"
           onClick={onDelete}
-          disabled={isTesting || selectedServer.id === 0}
+          disabled={!selectedServer.id}
+          className="bg-red-600 hover:bg-red-700 text-white"
         >
           <Trash2 className="mr-2 h-4 w-4" />
-          Delete
+          Delete Server
         </Button>
 
-        <Button
-          onClick={onSave}
-          disabled={isTesting}
-        >
-          <Save className="mr-2 h-4 w-4" />
-          Save Changes
-        </Button>
+        <div className="space-x-2">
+          <Button
+            variant="outline"
+            onClick={onTestConnection}
+            disabled={isTesting}
+            className="border-gray-700 hover:bg-gray-800 text-white"
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${isTesting ? 'animate-spin' : ''}`} />
+            Test Connection
+          </Button>
+
+          <Button
+            onClick={onSave}
+            disabled={isTesting}
+            className="bg-primary hover:bg-primary/90 text-white"
+          >
+            <Save className="mr-2 h-4 w-4" />
+            Save Changes
+          </Button>
+        </div>
       </div>
     </div>
   );

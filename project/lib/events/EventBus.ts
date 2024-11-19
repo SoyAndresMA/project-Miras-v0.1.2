@@ -7,7 +7,8 @@ export type BaseEventType =
   | 'PLAY'           // Solicitud de reproducción
   | 'STOP'           // Solicitud de detención
   | 'STATE_CHANGE'   // Cambio de estado
-  | 'ERROR';         // Error en alguna operación
+  | 'ERROR'          // Error en alguna operación
+  | 'SERVER_STATUS'; // Estado del servidor
 
 // Eventos específicos por tipo de item
 export type CasparClipEventType = BaseEventType | 'SEEK' | 'VOLUME_CHANGE';
@@ -52,7 +53,19 @@ export interface CasparCameraEvent extends BaseItemEvent<'casparCamera'> {
   }
 }
 
-export type MItemEvent = CasparClipEvent | CasparCameraEvent;
+// Interfaz para eventos del servidor
+export interface ServerStatusEvent {
+  type: 'SERVER_STATUS';
+  serverId: number;
+  status: {
+    connected: boolean;
+    version?: string;
+    name?: string;
+  };
+}
+
+// Tipo unión para todos los eventos posibles
+export type EventType = CasparClipEvent | CasparCameraEvent | ServerStatusEvent;
 
 class EventBus {
   private static instance: EventBus;
@@ -73,19 +86,24 @@ class EventBus {
     return EventBus.instance;
   }
 
-  public emit(event: MItemEvent) {
-    this.logger.debug('EventBus', 'Emit', `Emitting event for item ${event.itemId}`, event);
-    this.emitter.emit(`${event.type}:${event.itemId}`, event);
+  public emit(event: EventType) {
+    this.logger.debug('EventBus', 'Emit', `Emitting event type ${event.type}`, event);
+    this.emitter.emit(event.type, event);
     this.emitter.emit('all', event);
   }
 
-  public subscribe(callback: (event: MItemEvent) => void): () => void {
-    this.logger.debug('EventBus', 'Subscribe', 'Adding new subscriber');
-    this.emitter.on('all', callback);
+  public subscribe(eventType: string, callback: (event: EventType) => void): () => void {
+    this.logger.debug('EventBus', 'Subscribe', `Adding subscriber for ${eventType}`);
+    this.emitter.on(eventType, callback);
     return () => {
-      this.logger.debug('EventBus', 'Unsubscribe', 'Removing subscriber');
-      this.emitter.off('all', callback);
+      this.logger.debug('EventBus', 'Unsubscribe', `Removing subscriber for ${eventType}`);
+      this.emitter.off(eventType, callback);
     };
+  }
+
+  public unsubscribe(eventType: string, callback: (event: EventType) => void): void {
+    this.logger.debug('EventBus', 'Unsubscribe', `Removing subscriber for ${eventType}`);
+    this.emitter.off(eventType, callback);
   }
 }
 

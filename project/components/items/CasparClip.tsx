@@ -37,12 +37,12 @@ function CasparClip({
   const handleEvent = useCallback((event: MItemEvent) => {
     if (event.itemId !== item.id) return;
 
-    Logger.debug('CasparClipUI', 'HandleEvent', `Received event for item ${item.id}`, event);
+    Logger.getInstance().debug('CasparClipUI', 'HandleEvent', `Received event for item ${item.id}`, event);
 
     switch (event.action) {
       case 'STATE_CHANGE':
         if (event.state) {
-          Logger.info('CasparClipUI', 'StateUpdate', `Updating state for item ${item.id}`, event.state);
+          Logger.getInstance().info('CasparClipUI', 'StateUpdate', `Updating state for item ${item.id}`, event.state);
           setPlaybackState(event.state);
           
           if (event.state.isPlaying) {
@@ -54,7 +54,7 @@ function CasparClip({
         break;
 
       case 'ERROR':
-        Logger.error('CasparClipUI', 'Error', `Error in item ${item.id}: ${event.error}`);
+        Logger.getInstance().error('CasparClipUI', 'Error', `Error in item ${item.id}: ${event.error}`);
         toast({
           title: "Error",
           description: event.error,
@@ -66,18 +66,21 @@ function CasparClip({
 
   // Suscribirse a eventos
   useEffect(() => {
-    Logger.info('CasparClipUI', 'Mount', `Component mounted for item ${item.id}`);
-    const unsubscribe = EventBus.subscribe(handleEvent);
+    Logger.getInstance().info('CasparClipUI', 'Mount', `Component mounted for item ${item.id}`);
+    const unsubscribe = EventBus.getInstance().subscribe(handleEvent);
     
     return () => {
-      Logger.info('CasparClipUI', 'Unmount', `Component unmounting for item ${item.id}`);
+      Logger.getInstance().info('CasparClipUI', 'Unmount', `Component unmounting for item ${item.id}`);
       unsubscribe();
     };
   }, [item.id, handleEvent]);
 
   // Manejar clic en botón play/pause
   const handlePlayPause = useCallback(() => {
-    Logger.info('CasparClipUI', 'UserAction', `Play/Pause clicked for item ${item.id}`);
+    Logger.getInstance().info('CasparClipUI', 'UserAction', `Play/Pause clicked for item ${item.id}`);
+    
+    // Mostrar mensaje en la barra superior
+    actions.setDynamicInfo(`Click PLAY: ${item.name}`);
     
     const event: MItemEvent = {
       itemId: item.id,
@@ -86,11 +89,11 @@ function CasparClip({
       state: playbackState
     };
 
-    Logger.debug('CasparClipUI', 'EmitEvent', `Emitting ${event.action} event`, event);
-    EventBus.emit(event);
+    Logger.getInstance().debug('CasparClipUI', 'EmitEvent', `Emitting ${event.action} event`, event);
+    EventBus.getInstance().emit(event);
 
     onToggle?.();
-  }, [item.id, playbackState, onToggle]);
+  }, [item.id, item.name, playbackState, onToggle, actions]);
 
   // Manejar actualización de unión
   const handleUnionUpdate = useCallback((newUnion: MItemUnionType) => {

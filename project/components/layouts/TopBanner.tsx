@@ -1,11 +1,12 @@
 "use client";
 
 import React, { useRef, useEffect } from 'react';
-import { Menu, Heart, Share, Save, AlertCircle, Loader2 } from 'lucide-react';
+import { Menu, Heart, Share, Save, AlertCircle, Loader2, Wifi, WifiOff } from 'lucide-react';
 import { Project } from '@/lib/types/project';
 import { MenuSection } from '@/lib/types/layout';
 import { DeviceConfig } from '@/lib/types/device';
 import { cn } from '@/lib/utils';
+import { useServerState } from '@/hooks/useServerState';
 
 interface TopBannerProps {
   currentProject: Project | null;
@@ -35,6 +36,9 @@ export function TopBanner({
   saveProject
 }: TopBannerProps) {
   const menuRef = useRef<HTMLDivElement>(null);
+  const serverStates = servers.map(server => useServerState(server.id));
+  const anyServerConnected = serverStates.some(state => state.state?.connected);
+  const anyServerError = serverStates.some(state => state.error);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -51,121 +55,65 @@ export function TopBanner({
     <div className="h-8 bg-gray-800 shadow-md flex items-center px-1 border-b border-gray-700">
       <div className="flex items-center space-x-2 flex-1">
         <div className="relative" ref={menuRef}>
-          <button 
-            className="p-1 hover:bg-gray-700 rounded transition-colors"
+          <button
             onClick={() => setIsMenuOpen(!isMenuOpen)}
-            disabled={loading}
+            className={cn(
+              "p-1 rounded hover:bg-gray-700 transition-colors",
+              isMenuOpen && "bg-gray-700"
+            )}
           >
-            <Menu className="h-4 w-4" />
+            <Menu className="h-4 w-4 text-gray-400" />
           </button>
-          
-          {isMenuOpen && (
-            <div className="absolute top-full left-0 mt-1 w-48 bg-gray-700 rounded shadow-xl border border-gray-600 z-50">
-              {menuItems.map((section, index) => (
-                <div key={index} className="relative group">
-                  {section.label && (
-                    <div className="px-3 py-1.5 font-medium text-gray-100">
-                      {section.label}
-                    </div>
-                  )}
-                  <div className="w-full">
-                    {section.submenu.map((item, subIndex) => (
-                      <button
-                        key={subIndex}
-                        className={cn(
-                          "w-full text-left px-4 py-1.5 flex items-center gap-2",
-                          item.disabled 
-                            ? 'text-gray-500 cursor-not-allowed' 
-                            : 'text-gray-200 hover:bg-gray-600',
-                          "transition-colors"
-                        )}
-                        onClick={() => {
-                          if (!item.disabled && item.action) {
-                            item.action();
-                            setIsMenuOpen(false);
-                          }
-                        }}
-                        disabled={item.disabled}
-                      >
-                        {item.icon}
-                        <span>{item.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
-        
-        <div className="flex items-center space-x-1">
-          <span key="brand" className="font-semibold">Miras</span>
-          <span key="version" className="text-gray-400 text-sm">{appVersion}</span>
-          <span key="separator" className="text-gray-400 mx-1">-</span>
-          <span key="project" className="text-gray-300">
-            {loading ? 'Loading...' : (currentProject?.name || "No project")}
+
+        {/* Project Info */}
+        <div className="flex items-center space-x-2">
+          <span className="text-sm text-gray-400">
+            {currentProject ? currentProject.name : 'No project loaded'}
           </span>
         </div>
       </div>
 
       {/* CasparCG Servers Status */}
       <div className="flex-1 flex items-center justify-center space-x-2">
-        {servers.map((server) => (
-          <div key={`server-${server.id}`} className="flex items-center space-x-2">
+        {servers.map((server, index) => {
+          const { state, error } = serverStates[index];
+          const isConnected = state?.connected ?? false;
+          
+          return (
             <div 
-              key={`status-${server.id}`}
-              className={`relative w-4 h-4 rounded-full ${
-                server.connected ? 'bg-green-500' : 'bg-red-500'
-              } ${server.enabled ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed'}`}
-              onDoubleClick={async () => {
-                if (!server.enabled) return;
-                
-                if (!server.connected) {
-                  try {
-                    const response = await fetch(`/api/casparcg/servers/${server.id}/connect`, {
-                      method: 'POST',
-                    });
-                    if (!response.ok) {
-                      const error = await response.json();
-                      throw new Error(error.message || 'Failed to connect to server');
-                    }
-                  } catch (error) {
-                    console.error('Error connecting to server:', error);
-                  }
-                } else {
-                  try {
-                    const response = await fetch(`/api/casparcg/servers/${server.id}/disconnect`, {
-                      method: 'POST',
-                    });
-                    if (!response.ok) {
-                      const error = await response.json();
-                      throw new Error(error.message || 'Failed to disconnect from server');
-                    }
-                  } catch (error) {
-                    console.error('Error disconnecting from server:', error);
-                  }
-                }
-              }}
-              title={`${server.name} (${server.host}:${server.port})\nDouble click to ${server.connected ? 'disconnect' : 'connect'}`}
+              key={`server-${server.id}`} 
+              className="flex items-center space-x-1"
+              title={error || `Server: ${server.name}`}
             >
-              {server.loading && (
-                <Loader2 className="absolute inset-0 w-full h-full animate-spin text-white" />
+              {isConnected ? (
+                <Wifi className="h-4 w-4 text-green-500" />
+              ) : (
+                <WifiOff className="h-4 w-4 text-gray-500" />
               )}
+              <span className="text-sm text-gray-400">{server.name}</span>
             </div>
-            <span className="text-sm font-medium">{server.name || 'No Server'}</span>
-          </div>
-        ))}
+          );
+        })}
       </div>
       
       <div className="flex items-center space-x-2">
-        <span key="status" className={cn(
-          "text-gray-400 text-sm",
-          error && "text-red-400",
-          "flex items-center gap-1"
-        )}>
-          {error && <AlertCircle key="error-icon" className="h-4 w-4" />}
-          {error || dynamicInfo}
-        </span>
+        <div className="flex items-center space-x-2">
+          {loading ? (
+            <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+          ) : error ? (
+            <AlertCircle className="h-4 w-4 text-red-500" />
+          ) : anyServerConnected ? (
+            <Wifi className="h-4 w-4 text-green-500" />
+          ) : (
+            <WifiOff className="h-4 w-4 text-gray-500" />
+          )}
+          
+          <span className="text-sm text-gray-400">
+            {error || dynamicInfo || (anyServerConnected ? "Conectado" : "Desconectado")}
+          </span>
+        </div>
+
         <div key="actions" className="flex items-center space-x-1">
           {isSaving && (
             <Save key="save-icon" className="h-4 w-4 text-blue-400 animate-pulse" />
@@ -173,6 +121,8 @@ export function TopBanner({
           <Heart key="heart-icon" className="h-4 w-4 text-gray-400 hover:text-gray-300 transition-colors" />
           <Share key="share-icon" className="h-4 w-4 text-gray-400 hover:text-gray-300 transition-colors" />
         </div>
+
+        <span className="text-xs text-gray-500">{appVersion}</span>
       </div>
     </div>
   );

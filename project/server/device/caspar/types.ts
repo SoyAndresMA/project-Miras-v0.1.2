@@ -12,24 +12,24 @@ export interface CommandQueueItem {
   timeout?: NodeJS.Timeout;
 }
 
-export interface ConnectionOptions {
+export interface ConnectionConfig {
+  id: number;
+  name: string;
   host: string;
   port: number;
   timeout?: number;
-}
-
-export interface ServerStateData {
-  connected: boolean;
-  version: string | null;
-  channels: ChannelInfo[];
+  enabled?: boolean;
 }
 
 export interface ConnectionState {
-  isConnected: boolean;
-  lastError?: Error;
-  lastConnection?: Date;
-  reconnectAttempts: number;
-  lastActivity: number;
+  connected: boolean;
+  lastError?: string;
+}
+
+export interface ServerState {
+  version?: string;
+  connected: boolean;
+  media_files?: string;
 }
 
 export interface CasparServerConfig extends DeviceConfig {

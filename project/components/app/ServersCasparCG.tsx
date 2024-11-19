@@ -369,9 +369,9 @@ export function ServersCasparCG() {
   };
 
   return (
-    <div className="h-[400px] w-[600px] flex flex-col bg-background text-foreground">
-      {/* Server List */}
-      <div className="flex-none p-4 pb-2">
+    <div className="grid grid-cols-[350px,1fr] gap-6 h-[600px]">
+      {/* Lista de servidores */}
+      <div className="border-r border-gray-700 pr-6 overflow-y-auto">
         <Table>
           <TableHeader>
             <TableRow>
@@ -403,91 +403,89 @@ export function ServersCasparCG() {
         </Table>
       </div>
 
-      {/* Server Details */}
+      {/* Panel de configuración */}
       {selectedServer ? (
-        <>
-          <div className="flex-1 p-4 space-y-4 overflow-auto">
-            <div className="grid grid-cols-2 gap-4">
-              {/* Left Column */}
-              <div className="space-y-3">
-                <div className="space-y-2">
-                  <Label htmlFor="name" className="text-foreground">Server Name</Label>
-                  <Input
-                    id="name"
-                    value={selectedServer.name}
-                    onChange={(e) => handleUpdateServer('name', e.target.value)}
-                    className="text-foreground"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="host" className="text-foreground">Host</Label>
-                  <Input
-                    id="host"
-                    value={selectedServer.host}
-                    onChange={(e) => handleUpdateServer('host', e.target.value)}
-                    className="text-foreground"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="port" className="text-foreground">Port</Label>
-                  <Input
-                    id="port"
-                    type="number"
-                    value={selectedServer.port}
-                    onChange={(e) => handleUpdateServer('port', parseInt(e.target.value))}
-                    className="text-foreground"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="description" className="text-foreground">Description</Label>
-                  <Input
-                    id="description"
-                    value={selectedServer.description || ''}
-                    onChange={(e) => handleUpdateServer('description', e.target.value)}
-                    className="text-foreground"
-                  />
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Switch
-                    id="enabled"
-                    checked={selectedServer.enabled}
-                    onCheckedChange={(checked) => handleUpdateServer('enabled', checked)}
-                  />
-                  <Label htmlFor="enabled" className="text-foreground">Enabled</Label>
+        <div className="overflow-y-auto">
+          <div className="grid grid-cols-2 gap-4">
+            {/* Left Column */}
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label htmlFor="name" className="text-foreground">Server Name</Label>
+                <Input
+                  id="name"
+                  value={selectedServer.name}
+                  onChange={(e) => handleUpdateServer('name', e.target.value)}
+                  className="text-foreground"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="host" className="text-foreground">Host</Label>
+                <Input
+                  id="host"
+                  value={selectedServer.host}
+                  onChange={(e) => handleUpdateServer('host', e.target.value)}
+                  className="text-foreground"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="port" className="text-foreground">Port</Label>
+                <Input
+                  id="port"
+                  type="number"
+                  value={selectedServer.port}
+                  onChange={(e) => handleUpdateServer('port', parseInt(e.target.value))}
+                  className="text-foreground"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="description" className="text-foreground">Description</Label>
+                <Input
+                  id="description"
+                  value={selectedServer.description || ''}
+                  onChange={(e) => handleUpdateServer('description', e.target.value)}
+                  className="text-foreground"
+                />
+              </div>
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="enabled"
+                  checked={selectedServer.enabled}
+                  onCheckedChange={(checked) => handleUpdateServer('enabled', checked)}
+                />
+                <Label htmlFor="enabled" className="text-foreground">Enabled</Label>
+              </div>
+            </div>
+
+            {/* Right Column */}
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label className="text-foreground">Server Version</Label>
+                <div className="p-2 bg-secondary/20 rounded-md text-foreground">
+                  {selectedServer.version || 'Not connected'}
                 </div>
               </div>
-
-              {/* Right Column */}
-              <div className="space-y-3">
-                <div className="space-y-2">
-                  <Label className="text-foreground">Server Version</Label>
-                  <div className="p-2 bg-secondary/20 rounded-md text-foreground">
-                    {selectedServer.version || 'Not connected'}
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-foreground">Channels</Label>
-                  <div className="space-y-1">
-                    {selectedServer.channel_formats ? (
-                      selectedServer.channel_formats.split(',').map((channel, index) => (
-                        <div key={index} className="p-2 bg-secondary/20 rounded-md text-foreground">
-                          Channel {index + 1}: {channel}
-                        </div>
-                      ))
-                    ) : (
-                      <div className="p-2 bg-secondary/20 rounded-md text-foreground">
-                        Not connected
+              <div className="space-y-2">
+                <Label className="text-foreground">Channels</Label>
+                <div className="space-y-1">
+                  {selectedServer.channel_formats ? (
+                    selectedServer.channel_formats.split(',').map((channel, index) => (
+                      <div key={index} className="p-2 bg-secondary/20 rounded-md text-foreground">
+                        Channel {index + 1}: {channel}
                       </div>
-                    )}
-                  </div>
+                    ))
+                  ) : (
+                    <div className="p-2 bg-secondary/20 rounded-md text-foreground">
+                      Not connected
+                    </div>
+                  )}
                 </div>
-                <div className="flex items-center space-x-2">
-                  <Switch
-                    checked={selectedServer.is_shadow}
-                    onCheckedChange={(checked) => handleUpdateServer('is_shadow', checked)}
-                  />
-                  <Label className="text-foreground">Shadow Server</Label>
-                </div>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Switch
+                  checked={selectedServer.is_shadow}
+                  onCheckedChange={(checked) => handleUpdateServer('is_shadow', checked)}
+                />
+                <Label className="text-foreground">Shadow Server</Label>
               </div>
             </div>
           </div>
@@ -538,7 +536,7 @@ export function ServersCasparCG() {
               </div>
             </div>
           </div>
-        </>
+        </div>
       ) : (
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center space-y-2">

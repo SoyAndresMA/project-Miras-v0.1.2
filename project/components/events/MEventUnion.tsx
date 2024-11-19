@@ -56,6 +56,11 @@ export function MEventUnionComponent({
     }
   };
 
+  const handlePlayPause = () => {
+    // actions.setDynamicInfo(`Click PLAY: MEvent ${eventId}`);
+    onToggle();
+  };
+
   return (
     <>
       <div className="grid grid-cols-2 gap-[1px] h-8 w-16">
@@ -81,7 +86,7 @@ export function MEventUnionComponent({
           style={{ height: '100%', width: '100%' }}
         >
           <button
-            onClick={onToggle}
+            onClick={handlePlayPause}
             className="flex items-center justify-center p-1 rounded transition-colors hover:bg-opacity-80"
             disabled={isUpdating}
           >

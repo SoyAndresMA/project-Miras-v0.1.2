@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useCallback, useEffect } from 'react';
-import { MainLayoutState } from '@/lib/types/layout';
+import { MainLayoutState, MenuSection } from '@/lib/types/layout';
 import { Project } from '@/lib/types/project';
-import { MenuSection } from '@/lib/types/layout';
 import { DeviceConfig } from '@/lib/types/device';
+import EventBus from '@/lib/events/EventBus';
+import CasparServer from '@/lib/caspar/CasparServer';
 
 const defaultInitialState: MainLayoutState = {
   currentProject: null,
@@ -25,52 +26,61 @@ const defaultInitialState: MainLayoutState = {
 
 export function useMainLayout(initialState: MainLayoutState = defaultInitialState) {
   const [state, setState] = useState<MainLayoutState>(initialState);
+  const [serversInitialized, setServersInitialized] = useState(false);
 
-  // Efecto para comprobar el estado periódicamente
+  // Inicialización de servidores
   useEffect(() => {
-    let mounted = true;
-    let intervalId: NodeJS.Timeout;
-    
-    const checkServerStatus = async () => {
-      if (!mounted) return;
+    const initializeServers = async () => {
+      if (!state.servers.length) return;
       
       try {
-        const response = await fetch('/api/casparcg/status');
-        if (!response.ok) throw new Error('Failed to fetch server status');
-        
-        const status = await response.json();
-        
-        setState(prev => ({
-          ...prev,
-          servers: prev.servers.map(server => ({
-            ...server,
-            ...status[server.id],
-            name: status[server.id]?.name || server.name,
-            connected: status[server.id]?.connected || false
-          }))
+        // Esperar a que todos los servidores estén inicializados
+        await Promise.all(state.servers.map(async server => {
+          if (!server?.id) return;
+          const instance = await CasparServer.getInstance({
+            id: server.id,
+            name: server.name,
+            host: server.host,
+            port: server.port,
+            enabled: server.enabled
+          });
+          return instance;
         }));
+        
+        setServersInitialized(true);
       } catch (error) {
-        console.debug('Server status check failed:', error);
-        // No actualizamos el estado aquí para permitir operación sin servidor
+        console.error('Error initializing servers:', error);
+        setServersInitialized(false);
       }
     };
 
-    // Solo iniciamos el polling si hay servidores configurados
-    if (state.servers.length > 0) {
-      // Hacemos una verificación inicial
-      checkServerStatus();
-      
-      // Configuramos el polling cada 5 segundos
-      intervalId = setInterval(checkServerStatus, 5000);
-    }
+    initializeServers();
+  }, [state.servers]);
+
+  useEffect(() => {
+    if (!serversInitialized) return;
+
+    const handleServerStatus = (event: ServerStatusEvent) => {
+      setState(prev => ({
+        ...prev,
+        servers: prev.servers.map(server => ({
+          ...server,
+          ...event.status,
+          name: event.status.name || server.name,
+          connected: event.status.connected || false
+        }))
+      }));
+      setDynamicInfo(event.status.connected ? 
+        `Servidor ${event.status.name || event.serverId} conectado (v${event.status.version})` : 
+        'Servidor desconectado');
+    };
+
+    const unsubscribe = EventBus.getInstance().subscribe('SERVER_STATUS', handleServerStatus);
 
     return () => {
-      mounted = false;
-      if (intervalId) {
-        clearInterval(intervalId);
-      }
+      unsubscribe();
     };
-  }, [state.servers.length]); // Solo se reinicia si cambia el número de servidores
+  }, [serversInitialized]);
 
   const setIsMenuOpen = useCallback((isOpen: boolean) => {
     setState(prev => ({ ...prev, isMenuOpen: isOpen }));
@@ -98,7 +108,6 @@ export function useMainLayout(initialState: MainLayoutState = defaultInitialStat
         hasUnsavedChanges: false
       }));
 
-      // Dispatch event for project loaded
       const event = new CustomEvent('projectLoaded', { detail: project });
       window.dispatchEvent(event);
 
@@ -150,7 +159,6 @@ export function useMainLayout(initialState: MainLayoutState = defaultInitialStat
       lastSavedAt: null
     }));
 
-    // Dispatch event for project closed
     const event = new CustomEvent('projectLoaded', { detail: null });
     window.dispatchEvent(event);
   }, []);

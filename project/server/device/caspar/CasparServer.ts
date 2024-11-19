@@ -1,10 +1,11 @@
-import { DeviceManager } from '@/server/device/DeviceManager';
-import { CasparServerConfig, ConnectionOptions, ServerStateData } from './types';
-import { ConnectionManager } from './connection/ConnectionManager';
-import { CommandManager } from './connection/CommandManager';
+import { EventEmitter } from 'events';
 import { StateManager } from './state/StateManager';
+import { ConnectionManager } from './connection/ConnectionManager';
+import { ConnectionConfig } from './types';
+import { CommandManager } from './connection/CommandManager';
 import { Logger } from './utils/Logger';
 import { Channel } from './Channel';
+import getDb from '../../../db';
 
 // Interfaces
 interface PlayOptions {
@@ -18,7 +19,14 @@ interface PlayOptions {
   };
 }
 
-export class CasparServer extends DeviceManager {
+interface ServerState {
+  version?: string;
+  connected: boolean;
+  media_files?: string;
+  lastActivity?: any;
+}
+
+export class CasparServer extends EventEmitter {
   private static instances: Map<number, CasparServer> = new Map();
   
   private logger: Logger;
@@ -26,20 +34,33 @@ export class CasparServer extends DeviceManager {
   private commandManager: CommandManager;
   private stateManager: StateManager;
   private connected = false;
+  private mediaFiles: string = '';
+  private id: number;
+  private name: string;
+  private host: string;
+  private port: number;
+  private enabled: boolean;
 
-  constructor(config: CasparServerConfig) {
-    super(config);
+  constructor(config: ConnectionConfig) {
+    super();
+    
+    this.id = config.id;
+    this.name = config.name;
+    this.host = config.host;
+    this.port = config.port;
     
     this.logger = new Logger(`CasparServer:${this.id}`);
     
-    const connectionOptions: ConnectionOptions = {
+    const connectionOptions: ConnectionConfig = {
+      id: this.id,
+      name: this.name,
       host: this.host,
       port: this.port,
-      timeout: config.connection_timeout || 10000
+      timeout: config.timeout || 10000
     };
 
     // Primero crear el CommandManager
-    this.commandManager = new CommandManager(this.logger, config.connection_timeout || 10000);
+    this.commandManager = new CommandManager(this.logger, config.timeout || 10000);
     
     // Luego crear el ConnectionManager pasándole el CommandManager
     this.connectionManager = new ConnectionManager(
@@ -47,13 +68,13 @@ export class CasparServer extends DeviceManager {
       connectionOptions,
       this.commandManager
     );
-    
+
     this.stateManager = new StateManager(this.logger);
 
     this.setupEventListeners();
   }
 
-  static async getInstance(config: CasparServerConfig): Promise<CasparServer> {
+  static async getInstance(config: ConnectionConfig): Promise<CasparServer> {
     if (!config || typeof config.id !== 'number') {
       throw new Error('Invalid server configuration: missing or invalid id');
     }
@@ -69,7 +90,7 @@ export class CasparServer extends DeviceManager {
     return server;
   }
 
-  async updateConfig(config: CasparServerConfig): Promise<void> {
+  async updateConfig(config: ConnectionConfig): Promise<void> {
     this.id = config.id;
     this.name = config.name;
     this.host = config.host;
@@ -77,16 +98,16 @@ export class CasparServer extends DeviceManager {
     this.enabled = config.enabled;
     
     // Actualizar las opciones de conexión
-    const connectionOptions: ConnectionOptions = {
+    const connectionOptions: ConnectionConfig = {
       host: this.host,
       port: this.port,
-      timeout: config.connection_timeout || 10000
+      timeout: config.timeout || 10000
     };
     
     await this.connectionManager.updateOptions(connectionOptions);
   }
 
-  static getState(serverId: number): Promise<ServerStateData> {
+  static getState(serverId: number): Promise<ServerState> {
     const server = CasparServer.instances.get(serverId);
     if (!server) {
       throw new Error(`Server ${serverId} not found`);
@@ -95,19 +116,45 @@ export class CasparServer extends DeviceManager {
   }
 
   async initialize(): Promise<void> {
-    if (this.enabled) {
-      await this.connect();
-    }
-  }
+    this.logger.info('🚀 Inicializando servidor CasparCG...');
+    
+    try {
+      // Conectar al servidor
+      const connected = await this.connect();
+      if (!connected) {
+        throw new Error('Failed to connect to server');
+      }
 
-  isConnected(): boolean {
-    return this.connected && this.connectionManager.isConnected();
+      // Esperar un momento para asegurar que la conexión está estable
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Obtener lista de archivos multimedia
+      await this.updateMediaFiles();
+
+      try {
+        // Actualizar estado en la base de datos
+        const db = await getDb();
+        await db.run(`
+          UPDATE casparcg_servers 
+          SET media_files = ?, last_connection = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `, [this.mediaFiles, this.id]);
+      } catch (dbError) {
+        this.logger.warn('⚠️ No se pudo actualizar la base de datos:', dbError);
+        // Continuamos aunque falle la actualización de la BD
+      }
+
+      this.logger.info('✅ Servidor inicializado correctamente');
+    } catch (error) {
+      this.logger.error('❌ Error al inicializar servidor:', error);
+      throw error;
+    }
   }
 
   async connect(): Promise<boolean> {
     this.logger.info(`🔄 Iniciando conexión al servidor ${this.name}...`);
     
-    if (this.isConnected()) {
+    if (this.connected) {
       this.logger.info('✅ Ya conectado al servidor');
       return true;
     }
@@ -142,7 +189,7 @@ export class CasparServer extends DeviceManager {
   async disconnect(): Promise<void> {
     this.logger.info('🔄 Desconectando servidor...');
     
-    if (!this.isConnected()) {
+    if (!this.connected) {
       this.logger.info('ℹ️ El servidor ya está desconectado');
       return;
     }
@@ -160,7 +207,7 @@ export class CasparServer extends DeviceManager {
   async sendCommand(command: string): Promise<any> {
     this.logger.info(`📤 Enviando comando: ${command}`);
     
-    if (!this.isConnected()) {
+    if (!this.connected) {
       this.logger.error('❌ No se puede enviar el comando: servidor no conectado');
       throw new Error('Server not connected');
     }
@@ -175,45 +222,75 @@ export class CasparServer extends DeviceManager {
     }
   }
 
-  getServerState(): ServerStateData {
+  getServerState(): ServerState {
     return {
-      id: this.id,
-      name: this.name,
-      host: this.host,
-      port: this.port,
-      enabled: this.enabled,
-      connected: this.isConnected(),
-      ...this.stateManager.getState()
+      version: this.stateManager.getState().version,
+      connected: this.connected,
+      media_files: this.mediaFiles,
+      lastActivity: this.connectionManager.getLastActivity()
     };
   }
 
+  private async updateMediaFiles(): Promise<void> {
+    try {
+      const response = await this.sendCommand('DATA LIST');
+      this.mediaFiles = response;
+      this.logger.info('📁 Lista de archivos multimedia actualizada');
+    } catch (error) {
+      this.logger.error('❌ Error al obtener lista de archivos:', error);
+      this.mediaFiles = '';
+    }
+  }
+
+  getMediaFiles(): string {
+    return this.mediaFiles;
+  }
+
   private setupEventListeners(): void {
-    this.connectionManager.on('data', (data: Buffer) => {
-      this.commandManager.handleData(data);
+    // Eventos del ConnectionManager
+    this.connectionManager.on('activity', (state) => {
+      this.logger.debug('Actividad detectada:', state);
+      this.emit('stateChange', this.getServerState());
     });
 
-    this.commandManager.on('command', (command: string) => {
-      const socket = this.connectionManager.getSocket();
-      socket?.write(command);
+    this.connectionManager.on('connect', () => {
+      this.setConnected(true);
+      this.emit('stateChange', this.getServerState());
     });
 
-    this.stateManager.on('statusUpdate', async () => {
-      try {
-        await this.updateServerStatus();
-      } catch (error) {
-        this.logger.error('Error al actualizar estado:', error);
-      }
+    this.connectionManager.on('disconnect', () => {
+      this.setConnected(false);
+      this.emit('stateChange', this.getServerState());
     });
+
+    this.connectionManager.on('error', (error) => {
+      this.logger.error('Error de conexión:', error);
+      this.setConnected(false);
+      this.emit('stateChange', this.getServerState());
+    });
+
+    // Eventos del CommandManager
+    this.commandManager.on('response', (response) => {
+      this.logger.debug('Respuesta recibida:', response);
+      this.emit('stateChange', this.getServerState());
+    });
+  }
+
+  setConnected(value: boolean) {
+    if (this.connected !== value) {
+      this.connected = value;
+      this.emit('stateChange', this.getServerState());
+    }
   }
 
   private async updateServerStatus(): Promise<void> {
     try {
-      const infoResponse = await this.sendCommand('INFO');
-      await this.parseInfoResponse(infoResponse);
-      this.stateManager.updateSuccess();
+      if (!this.connected) return;
+
+      // No necesitamos enviar VERSION aquí ya que se hace en initialize()
+      await this.updateMediaFiles();
     } catch (error) {
-      this.logger.error('Error al actualizar estado:', error);
-      this.stateManager.updateFailed();
+      this.logger.error('Error al actualizar estado del servidor:', error);
     }
   }
 
@@ -260,7 +337,7 @@ export class CasparServer extends DeviceManager {
   async play(options: PlayOptions): Promise<void> {
     this.logger.info('🎬 Iniciando reproducción de clip', options);
     
-    if (!this.isConnected()) {
+    if (!this.connected) {
       throw new Error('Server not connected');
     }
 
@@ -289,7 +366,7 @@ export class CasparServer extends DeviceManager {
   async stop(channel: number, layer: number): Promise<void> {
     this.logger.info(`⏹️ Deteniendo clip en canal ${channel}, capa ${layer}`);
     
-    if (!this.isConnected()) {
+    if (!this.connected) {
       throw new Error('Server not connected');
     }
 
@@ -299,13 +376,6 @@ export class CasparServer extends DeviceManager {
     } catch (error) {
       this.logger.error('❌ Error al detener clip:', error);
       throw error;
-    }
-  }
-
-  private setConnected(value: boolean) {
-    if (this.connected !== value) {
-      this.connected = value;
-      this.emit('connectionChange', { id: this.id, connected: value });
     }
   }
 }
