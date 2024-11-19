@@ -16,7 +16,7 @@ export type ObsClipEventType = BaseEventType | 'VISIBILITY' | 'TRANSITION';
 
 // Mapa de tipos de eventos específicos
 export type ItemEventTypeMap = {
-  'casparClip': CasparClipEventType;
+  'CasparClip': CasparClipEventType;
   'casparCamera': CasparCameraEventType;
   'casparMicrophone': BaseEventType;
   'casparGraphic': BaseEventType;
@@ -37,22 +37,22 @@ export interface BaseItemEvent<T extends SpecificItemType> {
 }
 
 // Tipos específicos de eventos
-export interface CasparClipEvent extends BaseItemEvent<'casparClip'> {
+export interface CasparClipEvent extends BaseItemEvent<'CasparClip'> {
   metadata?: {
     currentTime?: number;
     duration?: number;
     volume?: number;
-  };
+  }
 }
 
 export interface CasparCameraEvent extends BaseItemEvent<'casparCamera'> {
   metadata?: {
     previewEnabled?: boolean;
     settings?: Record<string, unknown>;
-  };
+  }
 }
 
-export type MItemEvent = BaseItemEvent<SpecificItemType>;
+export type MItemEvent = CasparClipEvent | CasparCameraEvent;
 
 class EventBus {
   private static instance: EventBus;
@@ -73,43 +73,20 @@ class EventBus {
     return EventBus.instance;
   }
 
-  public emit<T extends SpecificItemType>(event: BaseItemEvent<T>) {
-    this.logger.debug('Emitting event', {
-      itemId: event.itemId,
-      type: event.type,
-      action: event.action,
-      metadata: event.metadata
-    });
-
-    // Emitir evento específico del tipo
+  public emit(event: MItemEvent) {
+    this.logger.debug('EventBus', 'Emit', `Emitting event for item ${event.itemId}`, event);
     this.emitter.emit(`${event.type}:${event.itemId}`, event);
-    
-    // Emitir evento general para compatibilidad
-    this.emitter.emit('item:event', event);
+    this.emitter.emit('all', event);
   }
 
-  public subscribe<T extends SpecificItemType>(
-    itemId: number,
-    type: T,
-    callback: (event: BaseItemEvent<T>) => void
-  ): () => void {
-    const eventName = `${type}:${itemId}`;
-    this.emitter.on(eventName, callback);
-    
+  public subscribe(callback: (event: MItemEvent) => void): () => void {
+    this.logger.debug('EventBus', 'Subscribe', 'Adding new subscriber');
+    this.emitter.on('all', callback);
     return () => {
-      this.emitter.off(eventName, callback);
-    };
-  }
-
-  public subscribeToAll(
-    callback: (event: MItemEvent) => void
-  ): () => void {
-    this.emitter.on('item:event', callback);
-    
-    return () => {
-      this.emitter.off('item:event', callback);
+      this.logger.debug('EventBus', 'Unsubscribe', 'Removing subscriber');
+      this.emitter.off('all', callback);
     };
   }
 }
 
-export default EventBus.getInstance();
+export default EventBus;

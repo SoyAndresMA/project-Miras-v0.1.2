@@ -59,7 +59,7 @@ INSERT INTO item_positions (
 SELECT 
   m.event_id,
   CASE m.type
-    WHEN 'casparMClip' THEN 'casparClip'
+    WHEN 'casparMClip' THEN 'CasparClip'
     WHEN 'casparMCam' THEN 'casparCamera'
     WHEN 'casparMMic' THEN 'casparMicrophone'
     WHEN 'casparMGraph' THEN 'casparGraphic'

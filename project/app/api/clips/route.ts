@@ -31,7 +31,7 @@ export async function POST(request: Request) {
       // Crear el item base
       const itemResult = await db.run(`
         INSERT INTO mitems (event_id, type, position_row, position_column)
-        VALUES (?, 'casparMClip', ?, ?)
+        VALUES (?, 'CasparClip', ?, ?)
       `, [validatedData.event_id, validatedData.position_row, validatedData.position_column]);
 
       const itemId = itemResult.lastID;
@@ -60,7 +60,7 @@ export async function POST(request: Request) {
       // Crear el objeto del clip completo
       const clipData = {
         id: itemId,
-        type: 'casparMClip',
+        type: 'CasparClip',
         position_row: validatedData.position_row,
         position_column: validatedData.position_column,
         name: validatedData.name,

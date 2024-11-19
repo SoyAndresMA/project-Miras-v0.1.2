@@ -1,5 +1,5 @@
 type LogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
-type LogComponent = 'EventBus' | 'CasparMClip' | 'CasparMClipUI' | 'CasparServer';
+type LogComponent = 'EventBus' | 'CasparClip' | 'CasparClipUI' | 'CasparServer';
 
 interface LogMessage {
   component: LogComponent;
@@ -58,4 +58,4 @@ class Logger {
   }
 }
 
-export default Logger.getInstance();
+export default Logger;

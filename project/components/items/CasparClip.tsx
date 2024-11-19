@@ -16,7 +16,7 @@ interface CasparClipProps {
   uniqueKey?: string;
 }
 
-export default function CasparClip({
+function CasparClip({
   item,
   isActive = false,
   onToggle,
@@ -139,3 +139,7 @@ export default function CasparClip({
     </div>
   );
 }
+
+export { CasparClip };
+
+export default CasparClip;

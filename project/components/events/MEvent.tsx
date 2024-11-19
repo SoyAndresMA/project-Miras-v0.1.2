@@ -4,8 +4,8 @@ import React, { useState, useCallback } from 'react';
 import { Play, Square } from 'lucide-react';
 import { MEvent, MEventUnion } from '@/lib/types/event';
 import { MEventUnionComponent } from './MEventUnion';
-import { CasparClip } from '../../items/CasparClip';
 import { CasparClip as CasparClipType } from '@/lib/types/item';
+import { CasparClip } from '@/components/items/CasparClip';
 
 interface MEventProps {
   event: MEvent;

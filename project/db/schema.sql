@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS mevents (
 CREATE TABLE IF NOT EXISTS item_positions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   event_id INTEGER NOT NULL,
-  item_type TEXT NOT NULL,
+  item_type TEXT NOT NULL CHECK(item_type IN ('CasparClip', 'casparCamera', 'casparGraphic', 'casparMicrophone', 'obsClip', 'obsCamera', 'obsGraphic', 'obsMicrophone')),
   item_id INTEGER NOT NULL,
   position_row INTEGER NOT NULL,
   position_column INTEGER NOT NULL,

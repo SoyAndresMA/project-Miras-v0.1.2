@@ -31,60 +31,77 @@ export async function GET(
       ORDER BY e.event_order
     `, params.id);
 
-    // Get all MItems for this project's events
+    // Get all items for this project's events
     const items = await db.all(`
       SELECT 
-        i.*,
-        u.name as union_name,
-        u.icon as union_icon,
-        u.description as union_description,
-        u.position as union_position,
-        u.delay as union_delay,
-        c.name as clip_name,
-        c.file_path,
-        c.channel,
-        c.layer,
-        c.loop,
-        c.transition_type,
-        c.transition_duration,
-        c.auto_start
-      FROM mitems i
-      LEFT JOIN mitem_unions u ON i.mitem_union_id = u.id
-      LEFT JOIN caspar_clips c ON i.id = c.item_id
-      WHERE i.event_id IN (
-        SELECT id FROM mevents WHERE project_id = ?
-      )
-      ORDER BY i.position_row, i.position_column
+        ip.id as position_id,
+        ip.event_id,
+        ip.item_type,
+        ip.item_id,
+        ip.position_row,
+        ip.position_column,
+        CASE ip.item_type
+          WHEN 'CasparClip' THEN json_object(
+            'id', cc.id,
+            'name', cc.name,
+            'file_path', cc.file_path,
+            'channel', cc.channel,
+            'layer', cc.layer,
+            'loop', cc.loop,
+            'auto_start', cc.auto_start,
+            'transition_type', cc.transition_type,
+            'transition_duration', cc.transition_duration
+          )
+          WHEN 'casparCamera' THEN json_object(
+            'id', cam.id,
+            'name', cam.name,
+            'device_id', cam.device_id,
+            'channel', cam.channel,
+            'layer', cam.layer,
+            'preview_enabled', cam.preview_enabled
+          )
+          WHEN 'casparGraphic' THEN json_object(
+            'id', cg.id,
+            'name', cg.name,
+            'file_path', cg.file_path,
+            'channel', cg.channel,
+            'layer', cg.layer,
+            'template_data', cg.template_data
+          )
+          WHEN 'casparMicrophone' THEN json_object(
+            'id', cm.id,
+            'name', cm.name,
+            'device_id', cm.device_id,
+            'channel', cm.channel,
+            'layer', cm.layer,
+            'volume', cm.volume
+          )
+          ELSE NULL
+        END as item_data
+      FROM item_positions ip
+      LEFT JOIN caspar_clips cc ON ip.item_type = 'CasparClip' AND ip.item_id = cc.id
+      LEFT JOIN caspar_cameras cam ON ip.item_type = 'casparCamera' AND ip.item_id = cam.id
+      LEFT JOIN caspar_graphics cg ON ip.item_type = 'casparGraphic' AND ip.item_id = cg.id
+      LEFT JOIN caspar_microphones cm ON ip.item_type = 'casparMicrophone' AND ip.item_id = cm.id
+      WHERE ip.event_id IN (SELECT id FROM mevents WHERE project_id = ?)
+      ORDER BY ip.event_id, ip.position_row, ip.position_column
     `, params.id);
+
+    // Transform items into their proper structure
+    const transformedItems = items.map(item => ({
+      id: item.position_id,
+      eventId: item.event_id,
+      type: item.item_type,
+      ...JSON.parse(item.item_data || '{}'),
+      position: {
+        row: item.position_row,
+        column: item.position_column
+      }
+    }));
 
     // Format events with their unions and items
     const formattedEvents = events.map((event: any) => {
-      const eventItems = items.filter((item: any) => item.event_id === event.id)
-        .map((item: any) => ({
-          id: item.id,
-          type: item.type,
-          position_row: item.position_row,
-          position_column: item.position_column,
-          munion: item.union_name ? {
-            id: item.mitem_union_id,
-            name: item.union_name,
-            icon: item.union_icon,
-            description: item.union_description,
-            position: item.union_position,
-            delay: item.union_delay
-          } : null,
-          // If it's a CasparMClip, add clip-specific properties
-          ...(item.type === 'casparMClip' && {
-            name: item.clip_name,
-            file_path: item.file_path,
-            channel: item.channel,
-            layer: item.layer,
-            loop: item.loop,
-            transition_type: item.transition_type,
-            transition_duration: item.transition_duration,
-            auto_start: item.auto_start
-          })
-        }));
+      const eventItems = transformedItems.filter((item: any) => item.eventId === event.id);
 
       return {
         id: event.id,
@@ -105,7 +122,8 @@ export async function GET(
     // Return project with its events and items
     return NextResponse.json({
       ...project,
-      events: formattedEvents
+      events: formattedEvents,
+      items: transformedItems
     });
   } catch (error) {
     console.error('Error fetching project:', error);

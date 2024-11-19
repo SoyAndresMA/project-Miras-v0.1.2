@@ -1,4 +1,4 @@
-import { CasparMClip } from '@/server/items/CasparMClip';
+import { CasparClip } from '@/server/items/CasparClip';
 import { MItemType } from '@/lib/types/item';
 import Logger from '@/lib/utils/logger';
 
@@ -19,7 +19,7 @@ interface ProjectItem {
 
 class ProjectItemInitializer {
   private static instance: ProjectItemInitializer;
-  private clips: Map<number, CasparMClip> = new Map();
+  private clips: Map<number, CasparClip> = new Map();
 
   private constructor() {}
 
@@ -32,16 +32,16 @@ class ProjectItemInitializer {
 
   public async initializeItems(items: ProjectItem[]) {
     // Solo mostrar warning si hay clips de CasparCG
-    const hasCasparClips = items.some(item => item.type === 'casparMClip');
+    const hasCasparClips = items.some(item => item.type === 'casparClip');
     
     if (hasCasparClips) {
       Logger.info('ProjectItemInitializer', 'Initialize', 'Initializing CasparCG clips in offline mode');
     }
 
     items.forEach(item => {
-      if (item.type === 'casparMClip' && item.file_path) {
+      if (item.type === 'casparClip' && item.file_path) {
         try {
-          const clip = new CasparMClip({
+          const clip = new CasparClip({
             id: item.id,
             name: item.name || '',
             file_path: item.file_path,
@@ -68,7 +68,7 @@ class ProjectItemInitializer {
     return Array.from(this.clips.values());
   }
 
-  public getClip(id: number): CasparMClip | undefined {
+  public getClip(id: number): CasparClip | undefined {
     return this.clips.get(id);
   }
 }

@@ -5,43 +5,33 @@ import { CasparServer } from '@/server/device/caspar/CasparServer';
 import { CasparClipRepository } from '@/lib/repositories/CasparClipRepository';
 
 export class CasparClipImpl implements CasparClip {
-  readonly id: number;
-  readonly type = 'casparClip' as const;
-  readonly eventId: number;
-  readonly name: string;
-  readonly filePath: string;
-  readonly channel: number;
-  readonly layer: number;
-  readonly loop: boolean;
-  readonly autoStart: boolean;
-  readonly position: { row: number; column: number };
-  readonly transition?: { type: string; duration: number };
-  
   private state: PlaybackState = {
     isPlaying: false,
     currentTime: 0,
     duration: 0
   };
-  
+
   private server: CasparServer;
   private repository: CasparClipRepository;
 
   constructor(
-    clip: CasparClip,
+    private config: {
+      id: number;
+      eventId: number;
+      name: string;
+      file_path: string;
+      position_row: number;
+      position_column: number;
+      channel: number;
+      layer: number;
+      loop: boolean;
+      transition_type: string;
+      transition_duration: number;
+      auto_start: boolean;
+    },
     server: CasparServer,
     repository: CasparClipRepository
   ) {
-    this.id = clip.id;
-    this.eventId = clip.eventId;
-    this.name = clip.name;
-    this.filePath = clip.filePath;
-    this.channel = clip.channel;
-    this.layer = clip.layer;
-    this.loop = clip.loop;
-    this.autoStart = clip.autoStart;
-    this.position = clip.position;
-    this.transition = clip.transition;
-
     this.server = server;
     this.repository = repository;
     
@@ -51,6 +41,52 @@ export class CasparClipImpl implements CasparClip {
     
     // Suscribirse a eventos
     EventBus.subscribe(this.handleEvent.bind(this));
+  }
+
+  get id(): number {
+    return this.config.id;
+  }
+
+  get eventId(): number {
+    return this.config.eventId;
+  }
+
+  get name(): string {
+    return this.config.name;
+  }
+
+  get filePath(): string {
+    return this.config.file_path;
+  }
+
+  get channel(): number {
+    return this.config.channel;
+  }
+
+  get layer(): number {
+    return this.config.layer;
+  }
+
+  get loop(): boolean {
+    return this.config.loop;
+  }
+
+  get transition(): { type: string; duration: number } {
+    return {
+      type: this.config.transition_type,
+      duration: this.config.transition_duration
+    };
+  }
+
+  get autoStart(): boolean {
+    return this.config.auto_start;
+  }
+
+  get position(): { row: number; column: number } {
+    return {
+      row: this.config.position_row,
+      column: this.config.position_column
+    };
   }
 
   private handleEvent = (event: MItemEvent) => {
@@ -68,19 +104,6 @@ export class CasparClipImpl implements CasparClip {
         break;
     }
   };
-
-  private emitEvent(action: MItemEvent['action'], error?: string) {
-    const event: MItemEvent = {
-      itemId: this.id,
-      type: 'casparClip',
-      action,
-      state: this.state,
-      error
-    };
-    
-    Logger.debug('CasparClip', 'EmitEvent', `Emitting ${action} event for clip ${this.id}`, event);
-    EventBus.emit(event);
-  }
 
   async execute() {
     try {
@@ -124,6 +147,19 @@ export class CasparClipImpl implements CasparClip {
       this.emitEvent('ERROR', errorMessage);
       throw error;
     }
+  }
+
+  private emitEvent(action: MItemEvent['action'], error?: string) {
+    const event: MItemEvent = {
+      itemId: this.id,
+      type: 'casparClip',
+      action,
+      state: this.state,
+      error
+    };
+    
+    Logger.debug('CasparClip', 'EmitEvent', `Emitting ${action} event for clip ${this.id}`, event);
+    EventBus.emit(event);
   }
 
   async stop() {

@@ -9,7 +9,7 @@ export class CasparClipRepository implements BaseRepository<CasparClip> {
     const clip = await this.db.get(`
       SELECT c.*, p.position_row, p.position_column
       FROM caspar_clips c
-      LEFT JOIN item_positions p ON p.item_id = c.id AND p.item_type = 'casparClip'
+      LEFT JOIN item_positions p ON p.item_id = c.id AND p.item_type = 'CasparClip'
       WHERE c.id = ?
     `, [id]);
 
@@ -20,7 +20,7 @@ export class CasparClipRepository implements BaseRepository<CasparClip> {
     const clips = await this.db.all(`
       SELECT c.*, p.position_row, p.position_column
       FROM caspar_clips c
-      LEFT JOIN item_positions p ON p.item_id = c.id AND p.item_type = 'casparClip'
+      LEFT JOIN item_positions p ON p.item_id = c.id AND p.item_type = 'CasparClip'
       WHERE c.event_id = ?
     `, [eventId]);
 
@@ -49,7 +49,7 @@ export class CasparClipRepository implements BaseRepository<CasparClip> {
       await this.db.run(`
         INSERT INTO item_positions (
           event_id, item_type, item_id, position_row, position_column
-        ) VALUES (?, 'casparClip', ?, ?, ?)
+        ) VALUES (?, 'CasparClip', ?, ?, ?)
       `, [item.eventId, result.lastID, item.position.row, item.position.column]);
     }
 
@@ -102,7 +102,7 @@ export class CasparClipRepository implements BaseRepository<CasparClip> {
   }
 
   async delete(id: number): Promise<void> {
-    await this.db.run('DELETE FROM item_positions WHERE item_id = ? AND item_type = ?', [id, 'casparClip']);
+    await this.db.run('DELETE FROM item_positions WHERE item_id = ? AND item_type = ?', [id, 'CasparClip']);
     await this.db.run('DELETE FROM caspar_clips WHERE id = ?', [id]);
   }
 
@@ -113,7 +113,7 @@ export class CasparClipRepository implements BaseRepository<CasparClip> {
     await this.db.run(`
       INSERT OR REPLACE INTO item_positions (
         event_id, item_type, item_id, position_row, position_column
-      ) VALUES (?, 'casparClip', ?, ?, ?)
+      ) VALUES (?, 'CasparClip', ?, ?, ?)
     `, [clip.eventId, id, row, column]);
   }
 
@@ -121,7 +121,7 @@ export class CasparClipRepository implements BaseRepository<CasparClip> {
     const pos = await this.db.get(`
       SELECT position_row as row, position_column as column
       FROM item_positions
-      WHERE item_id = ? AND item_type = 'casparClip'
+      WHERE item_id = ? AND item_type = 'CasparClip'
     `, [id]);
 
     return pos || null;
@@ -130,7 +130,7 @@ export class CasparClipRepository implements BaseRepository<CasparClip> {
   private mapToEntity(row: any): CasparClip {
     return {
       id: row.id,
-      type: 'casparClip',
+      type: 'CasparClip',
       eventId: row.event_id,
       name: row.name,
       filePath: row.file_path,

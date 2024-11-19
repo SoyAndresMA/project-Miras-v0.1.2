@@ -1,10 +1,10 @@
 import EventBus, { MItemEvent } from '../events/EventBus';
-import { CasparMClip } from '@/server/items/CasparMClip';
+import { CasparClip } from '@/server/items/CasparClip';
 import { CasparServer } from '@/server/device/caspar/CasparServer';
 
 class MItemEventHandler {
   private static instance: MItemEventHandler;
-  private items: Map<number, CasparMClip> = new Map();
+  private items: Map<number, CasparClip> = new Map();
   private server: CasparServer;
 
   private constructor() {
@@ -28,7 +28,7 @@ class MItemEventHandler {
     return MItemEventHandler.instance;
   }
 
-  registerItem(item: CasparMClip) {
+  registerItem(item: CasparClip) {
     console.log(`Registering item ${item.id} in MItemEventHandler`);
     this.items.set(item.id, item);
   }
