@@ -20,13 +20,13 @@ export class CasparServer extends DeviceManager {
     this.logger = new Logger(`CasparServer:${config.id}`);
     
     const connectionOptions: ConnectionOptions = {
-      host: config.host,
-      port: config.port,
-      timeout: config.commandTimeout || 5000
+      host: this.config.host,
+      port: this.config.port,
+      timeout: this.config.connection_timeout || 5000
     };
 
     this.connectionManager = new ConnectionManager(connectionOptions, this.logger);
-    this.commandManager = new CommandManager(this.logger, config.commandTimeout);
+    this.commandManager = new CommandManager(this.logger, this.config.connection_timeout);
     this.stateManager = new StateManager(this.logger);
 
     this.setupEventListeners();
@@ -37,8 +37,27 @@ export class CasparServer extends DeviceManager {
     if (!server) {
       server = new CasparServer(config);
       CasparServer.instances.set(config.id, server);
+    } else {
+      // Actualizar la configuración si el servidor ya existe
+      server.updateConfig(config);
     }
     return server;
+  }
+
+  updateConfig(config: CasparServerConfig): void {
+    this.config = config;
+    this.enabled = config.enabled;
+    this.host = config.host;
+    this.port = config.port;
+    
+    // Actualizar las opciones de conexión
+    const connectionOptions: ConnectionOptions = {
+      host: this.config.host,
+      port: this.config.port,
+      timeout: this.config.connection_timeout || 5000
+    };
+    
+    this.connectionManager.updateOptions(connectionOptions);
   }
 
   static getState(serverId: number): Promise<ServerStateData> {
@@ -46,32 +65,71 @@ export class CasparServer extends DeviceManager {
     if (!server) {
       throw new Error(`Server ${serverId} not found`);
     }
-    return Promise.resolve(server.stateManager.getState());
+    return Promise.resolve(server.getServerState());
   }
 
   async initialize(): Promise<void> {
-    await this.connect();
+    if (this.enabled) {
+      await this.connect();
+    }
   }
 
-  async connect(): Promise<void> {
+  async connect(): Promise<boolean> {
     try {
-      this.connected = await this.connectionManager.connect();
+      if (!this.enabled) {
+        this.logger.warn('⚠️ Servidor deshabilitado, no se intentará la conexión');
+        return false;
+      }
+
+      this.logger.info(`🔌 Intentando conectar a ${this.config.host}:${this.config.port}`);
+      
+      // Si ya está conectado, desconectar primero
       if (this.connected) {
-        this.stateManager.startStatusUpdates();
-        await this.initializeServerState();
+        this.logger.info('⚠️ Ya conectado, desconectando primero...');
+        await this.disconnect();
+      }
+
+      // Intentar conectar
+      this.connected = await this.connectionManager.connect();
+      
+      if (this.connected) {
+        this.logger.info('✅ Conexión establecida');
+        
+        // Verificar versión del servidor
+        try {
+          const versionResponse = await this.sendCommand('VERSION');
+          this.stateManager.updateVersion(versionResponse.data);
+          
+          // Inicializar estado del servidor
+          await this.initializeServerState();
+          
+          // Iniciar actualizaciones de estado
+          this.stateManager.startStatusUpdates();
+          
+          return true;
+        } catch (error) {
+          this.logger.error('❌ Error al inicializar estado del servidor:', error);
+          await this.disconnect();
+          return false;
+        }
+      } else {
+        this.logger.error('❌ No se pudo establecer conexión');
+        return false;
       }
     } catch (error) {
-      this.logger.error('Error al conectar:', error);
+      this.logger.error('❌ Error al conectar:', error);
       this.connected = false;
-      throw error;
+      return false;
     }
   }
 
   async disconnect(): Promise<void> {
+    this.logger.info('🔌 Desconectando del servidor');
     this.stateManager.stopStatusUpdates();
     this.commandManager.clearPendingCommands();
     await this.connectionManager.disconnect();
     this.connected = false;
+    this.logger.info('✅ Desconexión completada');
   }
 
   async sendCommand(command: string): Promise<any> {
@@ -86,7 +144,11 @@ export class CasparServer extends DeviceManager {
   }
 
   getServerState(): ServerStateData {
-    return this.stateManager.getState();
+    return {
+      ...this.stateManager.getState(),
+      enabled: this.enabled,
+      connected: this.connected
+    };
   }
 
   private setupEventListeners(): void {
@@ -110,19 +172,18 @@ export class CasparServer extends DeviceManager {
 
   private async initializeServerState(): Promise<void> {
     try {
-      const versionResponse = await this.sendCommand('VERSION');
-      this.stateManager.setVersion(versionResponse.data);
       const infoResponse = await this.sendCommand('INFO');
-      this.processChannelInfo(infoResponse.data);
+      this.stateManager.updateChannels(infoResponse.data);
     } catch (error) {
-      this.logger.error('Error al inicializar estado:', error);
+      this.logger.error('Error al inicializar estado del servidor:', error);
+      throw error;
     }
   }
 
   private async updateServerStatus(): Promise<void> {
     try {
       const infoResponse = await this.sendCommand('INFO');
-      this.processChannelInfo(infoResponse.data);
+      this.stateManager.updateChannels(infoResponse.data);
       this.stateManager.updateSuccess();
     } catch (error) {
       this.logger.error('Error al actualizar estado:', error);

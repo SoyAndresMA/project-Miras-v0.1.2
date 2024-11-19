@@ -103,39 +103,68 @@ export class ConnectionManager extends EventEmitter {
     return this.socket;
   }
 
-  private setupSocketListeners(resolve: (value: boolean) => void, reject: (error: Error) => void): void {
-    if (!this.socket) return;
+  updateOptions(options: ConnectionOptions): void {
+    this.options = options;
+  }
 
-    // Timeout handler
-    this.socket.on('timeout', () => {
-      this.logger.error('⏰ Timeout de conexión');
-      this.cleanup();
-      reject(new Error('Connection timeout'));
-    });
+  private setupSocketListeners(resolve: (value: boolean) => void, reject: (reason: any) => void): void {
+    if (!this.socket) {
+      reject(new Error('Socket no inicializado'));
+      return;
+    }
 
-    // Connection success handler
     this.socket.on('connect', () => {
-      this.logger.info(`✅ Conectado exitosamente a ${this.options.host}:${this.options.port}`);
+      this.logger.info('✅ Conexión establecida');
       this.state.isConnected = true;
-      this.state.lastConnection = new Date();
       this.state.reconnectAttempts = 0;
+      this.emit('connect');
       resolve(true);
     });
 
-    // Error handler
-    this.socket.on('error', (error) => {
-      this.logger.error(`❌ Error de socket:`, error);
-      this.cleanup();
-      reject(error);
+    this.socket.on('error', (error: Error) => {
+      const errorMessage = `Error de conexión a ${this.options.host}:${this.options.port} - ${error.message}`;
+      this.logger.error('❌', errorMessage);
+      this.state.isConnected = false;
+      this.emit('error', error);
+      
+      if (error.message.includes('ECONNREFUSED')) {
+        reject(new Error(`No se pudo conectar al servidor ${this.options.host}:${this.options.port} - Servidor no disponible`));
+      } else if (error.message.includes('ETIMEDOUT')) {
+        reject(new Error(`Timeout al conectar a ${this.options.host}:${this.options.port} - El servidor no responde`));
+      } else {
+        reject(error);
+      }
     });
 
-    // Close handler
-    this.socket.on('close', () => {
-      this.logger.info('🔌 Conexión cerrada');
-      this.cleanup();
+    this.socket.on('timeout', () => {
+      const errorMessage = `Timeout al conectar a ${this.options.host}:${this.options.port}`;
+      this.logger.error('⏰', errorMessage);
+      this.socket?.destroy(new Error(errorMessage));
+      this.state.isConnected = false;
+      this.emit('timeout');
+      reject(new Error(errorMessage));
     });
 
-    // Data handler
+    this.socket.on('close', (hadError: boolean) => {
+      this.logger.info(`🔌 Conexión cerrada${hadError ? ' por error' : ''}`);
+      this.state.isConnected = false;
+      this.emit('close', hadError);
+      
+      if (this.connectPromise) {
+        reject(new Error(`Conexión cerrada${hadError ? ' por error' : ''}`));
+      }
+    });
+
+    this.socket.on('end', () => {
+      this.logger.info('🔌 Servidor cerró la conexión');
+      this.state.isConnected = false;
+      this.emit('end');
+      
+      if (this.connectPromise) {
+        reject(new Error('El servidor cerró la conexión'));
+      }
+    });
+
     this.socket.on('data', (data: Buffer) => {
       this.emit('data', data);
     });
@@ -147,7 +176,7 @@ export class ConnectionManager extends EventEmitter {
       this.socket.destroy();
       this.socket = null;
     }
-    
     this.state.isConnected = false;
+    this.connectPromise = null;
   }
 }

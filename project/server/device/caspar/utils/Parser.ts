@@ -7,19 +7,29 @@ export class Parser {
       return null;
     }
 
-    // El formato de respuesta AMCP es: [código] [datos]
-    const match = data.match(/^(\d{3})(?: (.+))?$/);
-    if (!match) {
+    // Intentar parsear como JSON primero
+    try {
+      const jsonResponse = JSON.parse(data);
+      return {
+        code: jsonResponse.code,
+        status: jsonResponse.code >= 400 ? 'ERROR' : 'OK',
+        data: jsonResponse.data || ''
+      };
+    } catch {
+      // Si no es JSON, intentar parsear como AMCP
+      const amcpMatch = data.match(/^(\d{3})\s+([\w\s]+?)(?:\s+OK|\s+ERROR)(?:\s+(.+))?$/i);
+      if (amcpMatch) {
+        const [, code, command, responseData] = amcpMatch;
+        return {
+          code: parseInt(code),
+          status: data.includes('ERROR') ? 'ERROR' : 'OK',
+          data: responseData || ''
+        };
+      }
+
+      // Si no coincide con ningún formato, devolver error
       return null;
     }
-
-    const code = parseInt(match[1], 10);
-    const responseData = match[2] || '';
-
-    return {
-      code,
-      data: responseData
-    };
   }
 
   static isCompleteResponse(data: string): boolean {
@@ -49,7 +59,9 @@ export class Parser {
         const formatMatch = line.match(/format\s+(\d+)x(\d+)(?:-(\d+))?/);
         if (formatMatch) {
           currentChannel.resolution = `${formatMatch[1]}x${formatMatch[2]}`;
-          currentChannel.frameRate = parseInt(formatMatch[3] || '0', 10);
+          if (formatMatch[3]) {
+            currentChannel.frameRate = parseInt(formatMatch[3], 10);
+          }
         }
       }
     }

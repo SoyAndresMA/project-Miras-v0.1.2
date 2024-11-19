@@ -22,11 +22,19 @@ export async function GET() {
   try {
     const db = await getDb();
     const servers = await db.all('SELECT * FROM casparcg_servers ORDER BY name');
+
+    // Convertir valores booleanos para cada servidor
+    servers.forEach(server => {
+      server.enabled = server.enabled === 1;
+      server.is_shadow = server.is_shadow === 1;
+    });
+
     return NextResponse.json(servers);
   } catch (error) {
     console.error('Error fetching CasparCG servers:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
-      { error: 'Failed to fetch servers' },
+      { error: 'Failed to fetch servers', details: errorMessage },
       { status: 500 }
     );
   }
@@ -36,33 +44,45 @@ export async function POST(request: Request) {
   try {
     const data = await request.json();
     const validatedData = serverSchema.parse(data);
-    const database = await getDb();
+    const db = await getDb();
 
-    const result = await database.run(
-      `INSERT INTO casparcg_servers (
-        name, host, port, description, username, password,
-        preview_channel, locked_channel, is_shadow, enabled
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        validatedData.name,
-        validatedData.host,
-        validatedData.port,
-        validatedData.description,
-        validatedData.username,
-        validatedData.password,
-        validatedData.preview_channel,
-        validatedData.locked_channel,
-        validatedData.is_shadow ? 1 : 0,
-        validatedData.enabled ? 1 : 0
-      ]
+    // Validar y convertir valores booleanos
+    const enabled = validatedData.enabled === true ? 1 : 0;
+    const is_shadow = validatedData.is_shadow === true ? 1 : 0;
+
+    const result = await db.run(`
+      INSERT INTO casparcg_servers (
+        name, host, port, description,
+        username, password, preview_channel,
+        locked_channel, is_shadow, enabled
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      validatedData.name,
+      validatedData.host,
+      validatedData.port,
+      validatedData.description || null,
+      validatedData.username || null,
+      validatedData.password || null,
+      validatedData.preview_channel || null,
+      validatedData.locked_channel || null,
+      is_shadow,
+      enabled
+    ]);
+
+    // Obtener el servidor creado
+    const newServer = await db.get(
+      'SELECT * FROM casparcg_servers WHERE id = ?',
+      result.lastID
     );
 
-    const serverId = result.lastID;
+    // Convertir valores booleanos para la respuesta
+    newServer.enabled = newServer.enabled === 1;
+    newServer.is_shadow = newServer.is_shadow === 1;
 
     try {
       // Inicializar el servidor CasparCG
       const server = CasparServer.getInstance({
-        id: serverId,
+        id: newServer.id,
         name: validatedData.name,
         host: validatedData.host,
         port: validatedData.port,
@@ -76,28 +96,23 @@ export async function POST(request: Request) {
       }
 
       return NextResponse.json({ 
-        id: serverId,
+        id: newServer.id,
         connected: server.isConnected(),
         version: server.getServerState().version || null
       });
     } catch (serverError) {
       console.error('Error initializing server:', serverError);
       return NextResponse.json({ 
-        id: serverId,
+        id: newServer.id,
         connected: false,
         error: serverError.message
       });
     }
   } catch (error) {
-    console.error('Error creating server:', error);
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Invalid server data', details: error.errors },
-        { status: 400 }
-      );
-    }
+    console.error('Error creating CasparCG server:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
-      { error: 'Failed to create server' },
+      { error: 'Failed to create server', details: errorMessage },
       { status: 500 }
     );
   }

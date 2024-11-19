@@ -20,6 +20,10 @@ export async function GET(
       );
     }
 
+    // Convertir valores booleanos
+    server.enabled = server.enabled === 1;
+    server.is_shadow = server.is_shadow === 1;
+
     // Obtener el estado actual del servidor
     let state = { connected: false };
     try {
@@ -50,6 +54,11 @@ export async function PUT(
   try {
     const data = await request.json();
     console.log('Update data:', data);
+    
+    // Validar y convertir valores booleanos
+    const enabled = data.enabled === true ? 1 : 0;
+    const is_shadow = data.is_shadow === true ? 1 : 0;
+    
     const db = await getDb();
     
     await db.run(`
@@ -68,13 +77,23 @@ export async function PUT(
       data.password || null,
       data.preview_channel || null,
       data.locked_channel || null,
-      data.is_shadow ? 1 : 0,
-      data.enabled ? 1 : 0,
+      is_shadow,
+      enabled,
       params.id
     ]);
 
+    // Obtener el servidor actualizado
+    const updatedServer = await db.get(
+      'SELECT * FROM casparcg_servers WHERE id = ?',
+      params.id
+    );
+
+    // Convertir valores booleanos para la respuesta
+    updatedServer.enabled = updatedServer.enabled === 1;
+    updatedServer.is_shadow = updatedServer.is_shadow === 1;
+
     console.log('Server updated successfully');
-    return NextResponse.json({ success: true });
+    return NextResponse.json(updatedServer);
   } catch (error) {
     console.error('Error updating CasparCG server:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';

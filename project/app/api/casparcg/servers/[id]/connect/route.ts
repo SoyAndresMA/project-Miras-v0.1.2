@@ -24,54 +24,69 @@ export async function POST(
     }
 
     console.log('Found server:', server);
-    const casparServer = CasparServer.getInstance({
-      id: server.id,
-      name: server.name,
-      host: server.host,
-      port: server.port,
-      enabled: server.enabled === 1,
-      description: server.description,
-      username: server.username,
-      password: server.password,
-      preview_channel: server.preview_channel,
-      locked_channel: server.locked_channel,
-      is_shadow: server.is_shadow === 1,
-      connected: false
-    });
-
-    console.log('Attempting to connect to server:', server.name);
-    const connected = await casparServer.connect();
     
-    if (!connected) {
-      console.error('Failed to connect to server:', server.name);
-      return NextResponse.json({
+    try {
+      const casparServer = CasparServer.getInstance({
         id: server.id,
-        connected: false,
-        version: null,
-        channels: []
+        name: server.name,
+        host: server.host,
+        port: server.port,
+        enabled: server.enabled === 1,
+        description: server.description,
+        username: server.username,
+        password: server.password,
+        preview_channel: server.preview_channel,
+        locked_channel: server.locked_channel,
+        is_shadow: server.is_shadow === 1,
+        connected: false
       });
+
+      console.log('Attempting to connect to server:', server.name);
+      const connected = await casparServer.connect();
+      
+      if (!connected) {
+        console.error('Failed to connect to server:', server.name);
+        return NextResponse.json(
+          { 
+            error: 'Failed to connect to server',
+            details: `Could not establish connection to ${server.name} (${server.host}:${server.port})`
+          },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json({ 
+        success: true,
+        message: `Successfully connected to ${server.name}`,
+        server: {
+          id: server.id,
+          name: server.name,
+          host: server.host,
+          port: server.port,
+          connected: true
+        }
+      });
+
+    } catch (error: any) {
+      console.error('Error connecting to server:', error);
+      return NextResponse.json(
+        { 
+          error: 'Error connecting to server',
+          details: error.message || 'Unknown error',
+          stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        },
+        { status: 500 }
+      );
     }
 
-    console.log('Successfully connected to server:', server.name);
-    const state = await CasparServer.getState(server.id);
-    console.log('Server state:', state);
-    
-    // Actualizar la información del servidor en la base de datos
-    await db.run(`
-      UPDATE casparcg_servers 
-      SET version = ?, enabled = ?, last_connection = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `, [state.version, connected ? 1 : 0, params.id]);
-    
-    return NextResponse.json({
-      id: server.id,
-      ...state
-    });
-  } catch (error) {
-    console.error('Error testing server connection:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+  } catch (error: any) {
+    console.error('Database error:', error);
     return NextResponse.json(
-      { error: 'Failed to test connection', details: errorMessage },
+      { 
+        error: 'Database error',
+        details: error.message || 'Unknown error',
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      },
       { status: 500 }
     );
   }

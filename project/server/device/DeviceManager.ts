@@ -5,18 +5,20 @@ export abstract class DeviceManager {
   protected name: string;
   protected host: string;
   protected port: number;
-  protected active: boolean;
+  protected enabled: boolean;
   protected connected: boolean = false;
+  protected config: DeviceConfig;
 
   constructor(config: DeviceConfig) {
     this.id = config.id;
     this.name = config.name;
     this.host = config.host;
     this.port = config.port;
-    this.active = config.active;
+    this.enabled = config.enabled;
+    this.config = config;
   }
 
-  abstract connect(): Promise<void>;
+  abstract connect(): Promise<boolean>;
   abstract disconnect(): Promise<void>;
   abstract initialize(): Promise<void>;
   
@@ -24,13 +26,14 @@ export abstract class DeviceManager {
     return this.connected;
   }
 
+  isEnabled(): boolean {
+    return this.enabled;
+  }
+
   getConfig(): DeviceConfig {
     return {
-      id: this.id,
-      name: this.name,
-      host: this.host,
-      port: this.port,
-      active: this.active
+      ...this.config,
+      connected: this.connected
     };
   }
 }

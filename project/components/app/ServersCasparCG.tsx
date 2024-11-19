@@ -32,14 +32,13 @@ export function ServersCasparCG() {
         signal: controller.signal
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || 'Connection test failed');
-      }
-
       const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || data.details || 'Connection test failed');
+      }
       
-      // Update server version and channels
+      // Update server version and channels if available
       if (data.version) {
         handleUpdateServer('version', data.version);
       }
@@ -52,6 +51,13 @@ export function ServersCasparCG() {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       setConnectionStatus(`Connection test failed: ${errorMessage}`);
+      
+      toast({
+        title: "Connection Failed",
+        description: errorMessage,
+        variant: "destructive"
+      });
+      
       throw error;
     } finally {
       clearTimeout(timeoutId);
@@ -327,7 +333,10 @@ export function ServersCasparCG() {
 
     try {
       setIsTesting(true);
+      setConnectionStatus("Starting connection test...");
+      
       const updatedServer = await testServerConnection(selectedServer);
+      
       setSelectedServer(updatedServer);
       
       // Actualizar el servidor en la lista
@@ -336,8 +345,17 @@ export function ServersCasparCG() {
           server.id === updatedServer.id ? updatedServer : server
         )
       );
+
+      toast({
+        title: "Connection Successful",
+        description: `Successfully connected to ${selectedServer.name}`,
+      });
+    } catch (error) {
+      // El error ya se maneja en testServerConnection
+      console.error('Connection test failed:', error);
     } finally {
       setIsTesting(false);
+      setConnectionStatus("");
     }
   };
 
@@ -429,6 +447,14 @@ export function ServersCasparCG() {
                     className="text-foreground"
                   />
                 </div>
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="enabled"
+                    checked={selectedServer.enabled}
+                    onCheckedChange={(checked) => handleUpdateServer('enabled', checked)}
+                  />
+                  <Label htmlFor="enabled" className="text-foreground">Enabled</Label>
+                </div>
               </div>
 
               {/* Right Column */}
@@ -454,13 +480,6 @@ export function ServersCasparCG() {
                       </div>
                     )}
                   </div>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Switch
-                    checked={selectedServer.enabled}
-                    onCheckedChange={(checked) => handleUpdateServer('enabled', checked)}
-                  />
-                  <Label className="text-foreground">Enabled</Label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <Switch

@@ -13,7 +13,7 @@ export class StateManager extends EventEmitter {
   private updateInterval: NodeJS.Timeout | null = null;
   private updateAttempts: number = 0;
   private readonly MAX_UPDATE_ATTEMPTS = 3;
-  private readonly UPDATE_INTERVAL = 5000;
+  private readonly UPDATE_INTERVAL = 10000;
   private readonly RETRY_DELAY = 30000;
 
   constructor(private logger: Logger) {

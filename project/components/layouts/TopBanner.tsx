@@ -117,16 +117,29 @@ export function TopBanner({
                 server.connected ? 'bg-green-500' : 'bg-red-500'
               } cursor-pointer`}
               onDoubleClick={async () => {
-                if (!server.connected && server) {
+                if (!server.connected) {
                   try {
                     const response = await fetch(`/api/casparcg/servers/${server.id}/connect`, {
                       method: 'POST',
                     });
-                    if (response.ok) {
-                      // setIsConnected(true); // This line is commented out because setIsConnected is not defined in this scope
+                    if (!response.ok) {
+                      const error = await response.json();
+                      throw new Error(error.message || 'Failed to connect to server');
                     }
                   } catch (error) {
                     console.error('Error connecting to server:', error);
+                  }
+                } else {
+                  try {
+                    const response = await fetch(`/api/casparcg/servers/${server.id}/disconnect`, {
+                      method: 'POST',
+                    });
+                    if (!response.ok) {
+                      const error = await response.json();
+                      throw new Error(error.message || 'Failed to disconnect from server');
+                    }
+                  } catch (error) {
+                    console.error('Error disconnecting from server:', error);
                   }
                 }
               }}

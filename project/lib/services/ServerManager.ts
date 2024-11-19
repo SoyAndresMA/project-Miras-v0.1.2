@@ -25,44 +25,15 @@ class ServerManager {
       const servers = await response.json();
       this.serverConfigs = servers;
 
-      // Only try to connect to enabled servers
-      for (const config of servers.filter(s => s.enabled)) {
+      // Initialize servers without connecting
+      for (const config of servers) {
         const server = CasparServer.getInstance({
           id: config.id,
           name: config.name,
           host: config.host,
           port: config.port,
-          enabled: true
+          enabled: config.enabled
         });
-
-        try {
-          await server.connect();
-          config.connected = true;
-          
-          // Update server status via API
-          await fetch(`/api/casparcg/servers/${config.id}/status`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ connected: true })
-          });
-
-          // Emit server connection event
-          EventBus.emit({
-            type: 'SERVER_STATUS',
-            serverId: config.id,
-            connected: true
-          });
-        } catch (error) {
-          console.error(`Failed to connect to server ${config.name}:`, error);
-          config.connected = false;
-          
-          EventBus.emit({
-            type: 'SERVER_STATUS',
-            serverId: config.id,
-            connected: false,
-            error: error.message
-          });
-        }
 
         this.servers.set(config.id, server);
       }
@@ -83,6 +54,76 @@ class ServerManager {
     const index = this.serverConfigs.findIndex(s => s.id === config.id);
     if (index !== -1) {
       this.serverConfigs[index] = config;
+    }
+  }
+
+  async connectServer(id: number): Promise<void> {
+    const server = this.servers.get(id);
+    const config = this.serverConfigs.find(s => s.id === id);
+    
+    if (!server || !config) {
+      throw new Error(`Server ${id} not found`);
+    }
+
+    try {
+      await server.connect();
+      config.connected = true;
+      
+      // Update server status via API
+      await fetch(`/api/casparcg/servers/${config.id}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ connected: true })
+      });
+
+      // Emit server connection event
+      EventBus.emit({
+        type: 'SERVER_STATUS',
+        serverId: config.id,
+        connected: true
+      });
+    } catch (error) {
+      console.error(`Failed to connect to server ${config.name}:`, error);
+      config.connected = false;
+      
+      EventBus.emit({
+        type: 'SERVER_STATUS',
+        serverId: config.id,
+        connected: false,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  async disconnectServer(id: number): Promise<void> {
+    const server = this.servers.get(id);
+    const config = this.serverConfigs.find(s => s.id === id);
+    
+    if (!server || !config) {
+      throw new Error(`Server ${id} not found`);
+    }
+
+    try {
+      await server.disconnect();
+      config.connected = false;
+      
+      // Update server status via API
+      await fetch(`/api/casparcg/servers/${config.id}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ connected: false })
+      });
+
+      // Emit server disconnection event
+      EventBus.emit({
+        type: 'SERVER_STATUS',
+        serverId: config.id,
+        connected: false
+      });
+    } catch (error) {
+      console.error(`Failed to disconnect from server ${config.name}:`, error);
+      throw error;
     }
   }
 }

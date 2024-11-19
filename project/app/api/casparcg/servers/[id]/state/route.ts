@@ -32,40 +32,23 @@ export async function GET(
       );
     }
 
-    try {
-      // Inicializar el servidor CasparCG con la configuración
-      const server = CasparServer.getInstance({
-        id: serverConfig.id,
-        name: serverConfig.name,
-        host: serverConfig.host,
-        port: serverConfig.port,
-        enabled: Boolean(serverConfig.enabled),
-        commandTimeout: serverConfig.command_timeout || 5000
-      });
+    // Solo obtener el estado si ya existe una instancia del servidor
+    const server = CasparServer.getInstance({
+      id: serverConfig.id,
+      name: serverConfig.name,
+      host: serverConfig.host,
+      port: serverConfig.port,
+      enabled: Boolean(serverConfig.enabled),
+      commandTimeout: serverConfig.command_timeout || 5000
+    });
 
-      // Inicializar el servidor si aún no está conectado
-      if (!server.isConnected()) {
-        await server.initialize();
-      }
-      
-      // Obtener el estado del servidor
-      const state = await CasparServer.getState(serverId);
-      
-      // Actualizar el estado en la base de datos
-      await database.run(
-        'UPDATE casparcg_servers SET enabled = ?, version = ?, last_connection = CURRENT_TIMESTAMP WHERE id = ?',
-        [state.connected ? 1 : 0, state.version || null, serverId]
-      );
-
-      return NextResponse.json(state);
-    } catch (serverError) {
-      console.error(' Error al inicializar/conectar con el servidor:', serverError);
-      return NextResponse.json({
-        connected: false,
-        version: null,
-        error: serverError.message
-      });
-    }
+    // Verificar si el servidor está conectado sin intentar conectarlo
+    const isConnected = server.isConnected();
+    
+    return NextResponse.json({
+      connected: isConnected,
+      version: isConnected ? server.getServerState().version : null
+    });
   } catch (error) {
     console.error(' Error al obtener estado del servidor:', error);
     return NextResponse.json(
