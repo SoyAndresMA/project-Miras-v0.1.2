@@ -1,23 +1,16 @@
 import { CasparServer } from '@/server/device/caspar/CasparServer';
-import { headers } from 'next/headers';
 
 // Mapa para mantener las conexiones SSE activas por servidor
 const serverConnections = new Map<number, Set<ReadableStreamController<any>>>();
 
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: { serverId: string } }
 ) {
-  const serverId = parseInt(params.id);
+  const serverId = parseInt(params.serverId);
   if (isNaN(serverId)) {
     return new Response('Invalid server ID', { status: 400 });
   }
-
-  // Configurar headers para SSE
-  const headersList = headers();
-  headersList.set('Content-Type', 'text/event-stream');
-  headersList.set('Cache-Control', 'no-cache');
-  headersList.set('Connection', 'keep-alive');
 
   try {
     // Crear stream para SSE
@@ -51,11 +44,15 @@ export async function GET(
         request.signal.addEventListener('abort', () => {
           server.off('stateChange', onStateChange);
           serverConnections.get(serverId)?.delete(controller);
+          if (serverConnections.get(serverId)?.size === 0) {
+            serverConnections.delete(serverId);
+          }
           controller.close();
         });
       }
     });
 
+    // Retornar respuesta con headers apropiados para SSE
     return new Response(stream, {
       headers: {
         'Content-Type': 'text/event-stream',
@@ -64,7 +61,7 @@ export async function GET(
       },
     });
   } catch (error) {
-    console.error('Error en SSE:', error);
+    console.error('Error in SSE handler:', error);
     return new Response('Internal Server Error', { status: 500 });
   }
 }

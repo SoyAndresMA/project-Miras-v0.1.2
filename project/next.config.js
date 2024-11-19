@@ -8,6 +8,19 @@ const nextConfig = {
     config.ignoreWarnings = [
       { module: /node_modules\/punycode/ }
     ];
+
+    if (!isServer) {
+      // Don't bundle server-only modules on client-side
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        path: false,
+        sqlite3: false,
+        net: false,
+        tls: false,
+      };
+    }
+
     return config;
   },
   // Mejorar el comportamiento de desarrollo
@@ -20,11 +33,8 @@ const nextConfig = {
     // Periodo de tiempo que una página debe mantenerse en buffer
     maxInactiveAge: 25 * 1000,
     // Número de páginas que deben mantenerse en buffer
-    pagesBufferLength: 5,
+    pagesBufferLength: 2,
   },
-  // Optimizar para desarrollo
-  reactStrictMode: true,
-  poweredByHeader: false,
 }
 
 module.exports = nextConfig

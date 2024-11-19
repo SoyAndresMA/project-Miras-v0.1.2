@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server';
-import getDb from '@/db';
 import { z } from 'zod';
-import { CasparServer } from '@/server/device/caspar/CasparServer';
+import { CasparServerRepository } from '@/app/api/repositories/caspar-server.repository';
+import { LoggerService } from '@/lib/services/logger.service';
+
+const logger = LoggerService.getInstance();
+const context = 'CasparServersAPI';
 
 // Schema de validación para servidores CasparCG
 const serverSchema = z.object({
@@ -13,28 +16,38 @@ const serverSchema = z.object({
   password: z.string().optional().nullable(),
   preview_channel: z.number().int().min(1).optional().nullable(),
   locked_channel: z.number().int().min(1).optional().nullable(),
-  is_shadow: z.boolean().default(false),
-  enabled: z.boolean().default(true),
-  command_timeout: z.number().int().optional().nullable()
+  is_shadow: z.boolean().optional(),
+  enabled: z.boolean().optional(),
+  command_timeout: z.number().optional()
 });
 
-export async function GET() {
+const repository = CasparServerRepository.getInstance();
+
+export async function GET(request: Request) {
   try {
-    const db = await getDb();
-    const servers = await db.all('SELECT * FROM casparcg_servers ORDER BY name');
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
 
-    // Convertir valores booleanos para cada servidor
-    servers.forEach(server => {
-      server.enabled = server.enabled === 1;
-      server.is_shadow = server.is_shadow === 1;
-    });
+    if (id) {
+      const server = await repository.findById(Number(id));
+      if (!server) {
+        logger.warn('Server not found', context, { serverId: id });
+        return NextResponse.json(
+          { error: 'Server not found' },
+          { status: 404 }
+        );
+      }
+      logger.debug('Server fetched successfully', context, { serverId: id });
+      return NextResponse.json(server);
+    }
 
+    const servers = await repository.findAll();
+    logger.debug('Servers fetched successfully', context, { count: servers.length });
     return NextResponse.json(servers);
   } catch (error) {
-    console.error('Error fetching CasparCG servers:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    logger.error('Failed to fetch servers', error, context);
     return NextResponse.json(
-      { error: 'Failed to fetch servers', details: errorMessage },
+      { error: 'Failed to fetch servers' },
       { status: 500 }
     );
   }
@@ -42,77 +55,43 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const data = await request.json();
-    const validatedData = serverSchema.parse(data);
-    const db = await getDb();
+    const body = await request.json();
+    logger.debug('Received create server request', context, { body });
 
-    // Validar y convertir valores booleanos
-    const enabled = validatedData.enabled === true ? 1 : 0;
-    const is_shadow = validatedData.is_shadow === true ? 1 : 0;
-
-    const result = await db.run(`
-      INSERT INTO casparcg_servers (
-        name, host, port, description,
-        username, password, preview_channel,
-        locked_channel, is_shadow, enabled
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      validatedData.name,
+    const validatedData = serverSchema.parse(body);
+    
+    // Verificar si ya existe un servidor con el mismo nombre o host:port
+    const existingServer = await repository.findByHostAndPort(
       validatedData.host,
-      validatedData.port,
-      validatedData.description || null,
-      validatedData.username || null,
-      validatedData.password || null,
-      validatedData.preview_channel || null,
-      validatedData.locked_channel || null,
-      is_shadow,
-      enabled
-    ]);
-
-    // Obtener el servidor creado
-    const newServer = await db.get(
-      'SELECT * FROM casparcg_servers WHERE id = ?',
-      result.lastID
+      validatedData.port
     );
 
-    // Convertir valores booleanos para la respuesta
-    newServer.enabled = newServer.enabled === 1;
-    newServer.is_shadow = newServer.is_shadow === 1;
-
-    try {
-      // Inicializar el servidor CasparCG
-      const server = CasparServer.getInstance({
-        id: newServer.id,
-        name: validatedData.name,
-        host: validatedData.host,
-        port: validatedData.port,
-        enabled: validatedData.enabled,
-        commandTimeout: validatedData.command_timeout || 5000
+    if (existingServer) {
+      logger.warn('Server already exists', context, { 
+        host: validatedData.host, 
+        port: validatedData.port 
       });
-
-      // Intentar inicializar el servidor si está habilitado
-      if (validatedData.enabled) {
-        await server.initialize();
-      }
-
-      return NextResponse.json({ 
-        id: newServer.id,
-        connected: server.isConnected(),
-        version: server.getServerState().version || null
-      });
-    } catch (serverError) {
-      console.error('Error initializing server:', serverError);
-      return NextResponse.json({ 
-        id: newServer.id,
-        connected: false,
-        error: serverError.message
-      });
+      return NextResponse.json(
+        { error: 'A server with this host and port already exists' },
+        { status: 409 }
+      );
     }
+
+    const server = await repository.create(validatedData);
+    logger.info('Server created successfully', context, { serverId: server.id });
+    return NextResponse.json(server, { status: 201 });
   } catch (error) {
-    console.error('Error creating CasparCG server:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    if (error instanceof z.ZodError) {
+      logger.warn('Invalid server creation data', context, { error: error.errors });
+      return NextResponse.json(
+        { error: 'Invalid request data', details: error.errors },
+        { status: 400 }
+      );
+    }
+
+    logger.error('Failed to create server', error, context);
     return NextResponse.json(
-      { error: 'Failed to create server', details: errorMessage },
+      { error: 'Failed to create server' },
       { status: 500 }
     );
   }
@@ -120,96 +99,95 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
-    const data = await request.json();
-    const validatedData = serverSchema.parse(data);
-    const database = await getDb();
+    const body = await request.json();
+    logger.debug('Received update server request', context, { body });
 
-    // Obtener el estado actual del servidor
-    const currentServer = await database.get(
-      'SELECT enabled FROM casparcg_servers WHERE id = ?',
-      [data.id]
-    );
+    if (!body.id) {
+      logger.warn('Missing server id', context);
+      return NextResponse.json(
+        { error: 'Server id is required' },
+        { status: 400 }
+      );
+    }
 
-    if (!currentServer) {
+    const validatedData = serverSchema.parse(body);
+    
+    // Verificar si el servidor existe
+    const existingServer = await repository.findById(body.id);
+    if (!existingServer) {
+      logger.warn('Server not found', context, { serverId: body.id });
       return NextResponse.json(
         { error: 'Server not found' },
         { status: 404 }
       );
     }
 
-    // Actualizar la base de datos
-    await database.run(
-      `UPDATE casparcg_servers SET
-        name = ?, host = ?, port = ?, description = ?,
-        username = ?, password = ?, preview_channel = ?,
-        locked_channel = ?, is_shadow = ?, enabled = ?
-        WHERE id = ?`,
-      [
-        validatedData.name,
-        validatedData.host,
-        validatedData.port,
-        validatedData.description,
-        validatedData.username,
-        validatedData.password,
-        validatedData.preview_channel,
-        validatedData.locked_channel,
-        validatedData.is_shadow ? 1 : 0,
-        validatedData.enabled ? 1 : 0,
-        data.id
-      ]
+    // Verificar si el nuevo host:port no está en uso por otro servidor
+    const conflictingServer = await repository.findByHostAndPort(
+      validatedData.host,
+      validatedData.port
     );
-
-    try {
-      // Obtener o crear la instancia del servidor
-      const server = CasparServer.getInstance({
-        id: data.id,
-        name: validatedData.name,
+    if (conflictingServer && conflictingServer.id !== body.id) {
+      logger.warn('Server host:port conflict', context, {
         host: validatedData.host,
         port: validatedData.port,
-        enabled: validatedData.enabled,
-        commandTimeout: validatedData.command_timeout || 5000
+        existingServerId: conflictingServer.id
       });
-
-      // Si el servidor está habilitado y no estaba habilitado antes, o si cambió la configuración
-      if (validatedData.enabled && 
-          (!currentServer.enabled || 
-           currentServer.host !== validatedData.host || 
-           currentServer.port !== validatedData.port)) {
-        console.log('Initializing server connection...');
-        await server.initialize();
-      }
-      // Si el servidor está deshabilitado y estaba habilitado antes
-      else if (!validatedData.enabled && currentServer.enabled) {
-        console.log('Disconnecting server...');
-        await server.disconnect();
-      }
-
-      const serverState = server.getServerState();
-      return NextResponse.json({ 
-        success: true,
-        connected: server.isConnected(),
-        version: serverState.version || null,
-        enabled: validatedData.enabled
-      });
-    } catch (serverError) {
-      console.error('Error managing server connection:', serverError);
-      return NextResponse.json({ 
-        success: true,
-        connected: false,
-        error: serverError.message,
-        enabled: validatedData.enabled
-      });
-    }
-  } catch (error) {
-    console.error('Error updating server:', error);
-    if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Invalid server data', details: error.errors },
+        { error: 'Another server is already using this host and port' },
+        { status: 409 }
+      );
+    }
+
+    const updatedServer = await repository.update(body.id, validatedData);
+    logger.info('Server updated successfully', context, { serverId: body.id });
+    return NextResponse.json(updatedServer);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      logger.warn('Invalid server update data', context, { error: error.errors });
+      return NextResponse.json(
+        { error: 'Invalid request data', details: error.errors },
         { status: 400 }
       );
     }
+
+    logger.error('Failed to update server', error, context);
     return NextResponse.json(
       { error: 'Failed to update server' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+
+    if (!id) {
+      logger.warn('Missing server id', context);
+      return NextResponse.json(
+        { error: 'Server id is required' },
+        { status: 400 }
+      );
+    }
+
+    const server = await repository.findById(Number(id));
+    if (!server) {
+      logger.warn('Server not found', context, { serverId: id });
+      return NextResponse.json(
+        { error: 'Server not found' },
+        { status: 404 }
+      );
+    }
+
+    await repository.delete(Number(id));
+    logger.info('Server deleted successfully', context, { serverId: id });
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    logger.error('Failed to delete server', error, context);
+    return NextResponse.json(
+      { error: 'Failed to delete server' },
       { status: 500 }
     );
   }

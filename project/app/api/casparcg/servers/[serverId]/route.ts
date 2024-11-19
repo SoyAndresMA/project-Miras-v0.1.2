@@ -1,17 +1,14 @@
 import { NextResponse } from 'next/server';
-import getDb from '@/db';
 import { CasparServer } from '@/server/device/caspar/CasparServer';
+import { CasparServerRepository } from '@/app/api/repositories/caspar-server.repository';
 
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: { serverId: string } }
 ) {
   try {
-    const db = await getDb();
-    const server = await db.get(
-      'SELECT * FROM casparcg_servers WHERE id = ?',
-      params.id
-    );
+    const serverRepo = CasparServerRepository.getInstance();
+    const server = await serverRepo.findById(parseInt(params.serverId));
     
     if (!server) {
       return NextResponse.json(
@@ -27,9 +24,9 @@ export async function GET(
     // Obtener el estado actual del servidor
     let state = { connected: false };
     try {
-      state = await CasparServer.getState(parseInt(params.id));
+      state = await CasparServer.getState(parseInt(params.serverId));
     } catch (error) {
-      console.warn(`Could not get state for server ${params.id}:`, error);
+      console.warn(`Could not get state for server ${params.serverId}:`, error);
     }
 
     return NextResponse.json({
@@ -48,9 +45,9 @@ export async function GET(
 
 export async function PUT(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: { serverId: string } }
 ) {
-  console.log('Updating server with ID:', params.id);
+  console.log('Updating server with ID:', params.serverId);
   try {
     const data = await request.json();
     console.log('Update data:', data);
@@ -59,34 +56,23 @@ export async function PUT(
     const enabled = data.enabled === true ? 1 : 0;
     const is_shadow = data.is_shadow === true ? 1 : 0;
     
-    const db = await getDb();
+    const serverRepo = CasparServerRepository.getInstance();
     
-    await db.run(`
-      UPDATE casparcg_servers SET
-        name = ?, host = ?, port = ?, description = ?,
-        username = ?, password = ?, preview_channel = ?,
-        locked_channel = ?, is_shadow = ?, enabled = ?,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `, [
-      data.name,
-      data.host,
-      data.port,
-      data.description || null,
-      data.username || null,
-      data.password || null,
-      data.preview_channel || null,
-      data.locked_channel || null,
+    await serverRepo.update(parseInt(params.serverId), {
+      name: data.name,
+      host: data.host,
+      port: data.port,
+      description: data.description || null,
+      username: data.username || null,
+      password: data.password || null,
+      preview_channel: data.preview_channel || null,
+      locked_channel: data.locked_channel || null,
       is_shadow,
-      enabled,
-      params.id
-    ]);
+      enabled
+    });
 
     // Obtener el servidor actualizado
-    const updatedServer = await db.get(
-      'SELECT * FROM casparcg_servers WHERE id = ?',
-      params.id
-    );
+    const updatedServer = await serverRepo.findById(parseInt(params.serverId));
 
     // Convertir valores booleanos para la respuesta
     updatedServer.enabled = updatedServer.enabled === 1;
@@ -106,16 +92,13 @@ export async function PUT(
 
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: { serverId: string } }
 ) {
   try {
-    const db = await getDb();
+    const serverRepo = CasparServerRepository.getInstance();
     
     // Verificar si el servidor existe
-    const server = await db.get(
-      'SELECT * FROM casparcg_servers WHERE id = ?',
-      params.id
-    );
+    const server = await serverRepo.findById(parseInt(params.serverId));
     
     if (!server) {
       return NextResponse.json(
@@ -135,11 +118,11 @@ export async function DELETE(
       });
       await casparServer.disconnect();
     } catch (error) {
-      console.warn(`Could not disconnect server ${params.id}:`, error);
+      console.warn(`Could not disconnect server ${params.serverId}:`, error);
     }
 
     // Eliminar el servidor de la base de datos
-    await db.run('DELETE FROM casparcg_servers WHERE id = ?', params.id);
+    await serverRepo.delete(parseInt(params.serverId));
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -154,19 +137,16 @@ export async function DELETE(
 
 export async function POST(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: { serverId: string } }
 ) {
-  console.log('Testing connection for server ID:', params.id);
+  console.log('Testing connection for server ID:', params.serverId);
   
   try {
-    const db = await getDb();
-    const server = await db.get(
-      'SELECT * FROM casparcg_servers WHERE id = ?',
-      params.id
-    );
+    const serverRepo = CasparServerRepository.getInstance();
+    const server = await serverRepo.findById(parseInt(params.serverId));
     
     if (!server) {
-      console.error('Server not found:', params.id);
+      console.error('Server not found:', params.serverId);
       return NextResponse.json(
         { error: 'Server not found' },
         { status: 404 }
@@ -212,11 +192,11 @@ export async function POST(
     console.log('Parsed channels:', channels);
     
     // Actualizar la información del servidor en la base de datos
-    await db.run(`
-      UPDATE casparcg_servers 
-      SET version = ?, channel_formats = ?, last_connection = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `, [version, JSON.stringify(channels), params.id]);
+    await serverRepo.update(parseInt(params.serverId), {
+      version,
+      channel_formats: JSON.stringify(channels),
+      last_connection: new Date()
+    });
     
     // Solo desconectar si el servidor no estaba previamente conectado
     if (!server.enabled) {

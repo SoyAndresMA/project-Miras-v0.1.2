@@ -1,131 +1,142 @@
-import { DeviceConfig } from '@/lib/types/device';
+import { EventEmitter } from 'events';
 import { CasparServer } from '@/server/device/caspar/CasparServer';
-import EventBus from '@/lib/events/EventBus';
+import { DeviceConfig } from '@/lib/types/device';
+import { CasparServerRepository } from '@/app/api/repositories/caspar-server.repository';
 
-class ServerManager {
+interface ServerState {
+  connected: boolean;
+  loading: boolean;
+  error: string | null;
+}
+
+type StateListener = (state: ServerState) => void;
+
+export class ServerManager {
   private static instance: ServerManager;
-  private servers: Map<number, CasparServer> = new Map();
-  private serverConfigs: DeviceConfig[] = [];
+  private servers: Map<string, CasparServer>;
+  private states: Map<string, ServerState>;
+  private listeners: Map<string, Set<StateListener>>;
+  private eventEmitter: EventEmitter;
+  private repository: CasparServerRepository;
+  private initializationPromise: Promise<void> | null = null;
 
   private constructor() {
-    // Initialize servers when the app starts
-    this.initialize();
+    this.servers = new Map();
+    this.states = new Map();
+    this.listeners = new Map();
+    this.eventEmitter = new EventEmitter();
+    this.eventEmitter.setMaxListeners(100);
+    this.repository = new CasparServerRepository();
   }
 
-  public static getInstance(): ServerManager {
+  static getInstance(): ServerManager {
     if (!ServerManager.instance) {
       ServerManager.instance = new ServerManager();
     }
     return ServerManager.instance;
   }
 
-  async initialize() {
+  async initialize(): Promise<void> {
+    if (this.initializationPromise) {
+      return this.initializationPromise;
+    }
+
+    this.initializationPromise = this.doInitialize();
+    return this.initializationPromise;
+  }
+
+  private async doInitialize(): Promise<void> {
     try {
-      const response = await fetch('/api/casparcg/servers');
-      const servers = await response.json();
-      this.serverConfigs = servers;
-
-      // Initialize servers without connecting
+      const servers = await this.repository.findAll();
       for (const config of servers) {
-        const server = CasparServer.getInstance({
-          id: config.id,
-          name: config.name,
-          host: config.host,
-          port: config.port,
-          enabled: config.enabled
-        });
-
-        this.servers.set(config.id, server);
+        if (!config.enabled) continue;
+        await this.initializeServer(config);
       }
     } catch (error) {
       console.error('Error initializing servers:', error);
+      throw error;
     }
   }
 
-  getServerConfigs(): DeviceConfig[] {
-    return this.serverConfigs;
-  }
-
-  getServer(id: number): CasparServer | undefined {
-    return this.servers.get(id);
-  }
-
-  async updateServerConfig(config: DeviceConfig) {
-    const index = this.serverConfigs.findIndex(s => s.id === config.id);
-    if (index !== -1) {
-      this.serverConfigs[index] = config;
-    }
-  }
-
-  async connectServer(id: number): Promise<void> {
-    const server = this.servers.get(id);
-    const config = this.serverConfigs.find(s => s.id === id);
+  private async initializeServer(config: DeviceConfig): Promise<void> {
+    const serverId = config.id.toString();
     
-    if (!server || !config) {
-      throw new Error(`Server ${id} not found`);
-    }
+    // Actualizar estado a loading
+    this.updateState(serverId, {
+      connected: false,
+      loading: true,
+      error: null
+    });
 
     try {
-      await server.connect();
-      config.connected = true;
+      const server = CasparServer.getInstance(config);
+      await server.initialize();
       
-      // Update server status via API
-      await fetch(`/api/casparcg/servers/${config.id}/status`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ connected: true })
+      this.servers.set(serverId, server);
+      
+      // Actualizar estado a conectado
+      this.updateState(serverId, {
+        connected: true,
+        loading: false,
+        error: null
       });
 
-      // Emit server connection event
-      EventBus.emit({
-        type: 'SERVER_STATUS',
-        serverId: config.id,
-        connected: true
+      // Configurar listeners para el servidor
+      server.on('error', (error) => {
+        this.updateState(serverId, {
+          connected: false,
+          loading: false,
+          error: error.message
+        });
       });
+
+      server.on('connected', () => {
+        this.updateState(serverId, {
+          connected: true,
+          loading: false,
+          error: null
+        });
+      });
+
     } catch (error) {
-      console.error(`Failed to connect to server ${config.name}:`, error);
-      config.connected = false;
-      
-      EventBus.emit({
-        type: 'SERVER_STATUS',
-        serverId: config.id,
+      // Actualizar estado a error
+      this.updateState(serverId, {
         connected: false,
+        loading: false,
         error: error.message
       });
       throw error;
     }
   }
 
-  async disconnectServer(id: number): Promise<void> {
-    const server = this.servers.get(id);
-    const config = this.serverConfigs.find(s => s.id === id);
-    
-    if (!server || !config) {
-      throw new Error(`Server ${id} not found`);
+  private updateState(serverId: string, newState: ServerState): void {
+    this.states.set(serverId, newState);
+    const listeners = this.listeners.get(serverId);
+    if (listeners) {
+      listeners.forEach(listener => listener(newState));
     }
+    this.eventEmitter.emit('serverStateChanged', { serverId, state: newState });
+  }
 
-    try {
-      await server.disconnect();
-      config.connected = false;
-      
-      // Update server status via API
-      await fetch(`/api/casparcg/servers/${config.id}/status`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ connected: false })
-      });
+  getServer(serverId: string): CasparServer | undefined {
+    return this.servers.get(serverId);
+  }
 
-      // Emit server disconnection event
-      EventBus.emit({
-        type: 'SERVER_STATUS',
-        serverId: config.id,
-        connected: false
-      });
-    } catch (error) {
-      console.error(`Failed to disconnect from server ${config.name}:`, error);
-      throw error;
+  getState(serverId: string): ServerState | undefined {
+    return this.states.get(serverId);
+  }
+
+  addStateListener(serverId: string, listener: StateListener): void {
+    if (!this.listeners.has(serverId)) {
+      this.listeners.set(serverId, new Set());
+    }
+    this.listeners.get(serverId)!.add(listener);
+  }
+
+  removeStateListener(serverId: string, listener: StateListener): void {
+    const listeners = this.listeners.get(serverId);
+    if (listeners) {
+      listeners.delete(listener);
     }
   }
 }
-
-export default ServerManager.getInstance();

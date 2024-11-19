@@ -1,98 +1,156 @@
 import { NextResponse } from 'next/server';
-import getDb from '@/db';
 import { z } from 'zod';
-import ProjectItemInitializer from '@/server/services/ProjectItemInitializer';
+import { LoggerService } from '@/lib/services/logger.service';
+import { CasparClipRepository } from '../repositories/caspar-clip.repository';
+
+const logger = LoggerService.getInstance();
+const context = 'ClipsAPI';
 
 const createClipSchema = z.object({
   event_id: z.number(),
-  position_row: z.number(),
-  position_column: z.number(),
-  name: z.string(),
-  file_path: z.string(),
-  channel: z.number().optional(),
-  layer: z.number().optional(),
+  title: z.string(),
+  server_id: z.number(),
+  clip_path: z.string(),
+  in_point: z.number().optional(),
+  out_point: z.number().optional(),
+  duration: z.number().optional(),
   loop: z.boolean().optional(),
-  transition_type: z.string().optional(),
-  transition_duration: z.number().optional(),
-  auto_start: z.boolean().optional()
+  item_union_id: z.number().optional()
 });
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+    logger.debug('Received create clip request', context, { body });
+
     const validatedData = createClipSchema.parse(body);
     
-    const db = await getDb();
+    const clipRepo = CasparClipRepository.getInstance();
+    const clip = await clipRepo.create(validatedData);
 
-    // Iniciar una transacción
-    await db.run('BEGIN TRANSACTION');
-
-    try {
-      // Crear el item base
-      const itemResult = await db.run(`
-        INSERT INTO mitems (event_id, type, position_row, position_column)
-        VALUES (?, 'CasparClip', ?, ?)
-      `, [validatedData.event_id, validatedData.position_row, validatedData.position_column]);
-
-      const itemId = itemResult.lastID;
-
-      // Crear el clip específico
-      await db.run(`
-        INSERT INTO caspar_clips (
-          item_id, name, file_path, channel, layer, loop,
-          transition_type, transition_duration, auto_start
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, [
-        itemId,
-        validatedData.name,
-        validatedData.file_path,
-        validatedData.channel || 1,
-        validatedData.layer || 1,
-        validatedData.loop || false,
-        validatedData.transition_type || 'cut',
-        validatedData.transition_duration || 0,
-        validatedData.auto_start || false
-      ]);
-
-      // Confirmar la transacción
-      await db.run('COMMIT');
-
-      // Crear el objeto del clip completo
-      const clipData = {
-        id: itemId,
-        type: 'CasparClip',
-        position_row: validatedData.position_row,
-        position_column: validatedData.position_column,
-        name: validatedData.name,
-        file_path: validatedData.file_path,
-        channel: validatedData.channel || 1,
-        layer: validatedData.layer || 1,
-        loop: validatedData.loop || false,
-        transition_type: validatedData.transition_type || 'cut',
-        transition_duration: validatedData.transition_duration || 0,
-        auto_start: validatedData.auto_start || false
-      };
-
-      // Inicializar el clip en el backend
-      ProjectItemInitializer.initializeItems([clipData]);
-
-      return NextResponse.json(clipData, { status: 201 });
-    } catch (error) {
-      // Si algo sale mal, revertir la transacción
-      await db.run('ROLLBACK');
-      throw error;
-    }
+    logger.info('Clip created successfully', context, { clipId: clip.id });
+    return NextResponse.json(clip);
   } catch (error) {
     if (error instanceof z.ZodError) {
+      logger.warn('Invalid clip creation data', context, { error: error.errors });
       return NextResponse.json(
-        { error: 'Invalid clip data', details: error.errors },
+        { error: 'Invalid request data', details: error.errors },
         { status: 400 }
       );
     }
-    
-    console.error('Error creating clip:', error);
+
+    logger.error('Failed to create clip', error, context);
     return NextResponse.json(
       { error: 'Failed to create clip' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const eventId = searchParams.get('event_id');
+
+    if (!eventId) {
+      logger.warn('Missing event_id parameter', context);
+      return NextResponse.json(
+        { error: 'event_id is required' },
+        { status: 400 }
+      );
+    }
+
+    const clipRepo = CasparClipRepository.getInstance();
+    const clips = await clipRepo.findByEventId(Number(eventId));
+
+    logger.debug('Clips fetched successfully', context, { eventId, count: clips.length });
+    return NextResponse.json(clips);
+  } catch (error) {
+    logger.error('Failed to fetch clips', error, context);
+    return NextResponse.json(
+      { error: 'Failed to fetch clips' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PUT(request: Request) {
+  try {
+    const body = await request.json();
+    logger.debug('Received update clip request', context, { body });
+
+    if (!body.id) {
+      logger.warn('Missing clip id', context);
+      return NextResponse.json(
+        { error: 'Clip id is required' },
+        { status: 400 }
+      );
+    }
+
+    const clipRepo = CasparClipRepository.getInstance();
+    const clip = await clipRepo.findById(body.id);
+
+    if (!clip) {
+      logger.warn('Clip not found', context, { clipId: body.id });
+      return NextResponse.json(
+        { error: 'Clip not found' },
+        { status: 404 }
+      );
+    }
+
+    if (body.clip_path) {
+      await clipRepo.updateClipPath(body.id, body.clip_path);
+    }
+    if (body.in_point !== undefined) {
+      await clipRepo.updateInPoint(body.id, body.in_point);
+    }
+    if (body.out_point !== undefined) {
+      await clipRepo.updateOutPoint(body.id, body.out_point);
+    }
+    if (body.duration !== undefined) {
+      await clipRepo.updateDuration(body.id, body.duration);
+    }
+    if (body.loop !== undefined) {
+      await clipRepo.updateLoop(body.id, body.loop);
+    }
+    if (body.item_union_id !== undefined) {
+      await clipRepo.updateUnion(body.id, body.item_union_id);
+    }
+
+    const updatedClip = await clipRepo.findById(body.id);
+    logger.info('Clip updated successfully', context, { clipId: body.id });
+    return NextResponse.json(updatedClip);
+  } catch (error) {
+    logger.error('Failed to update clip', error, context);
+    return NextResponse.json(
+      { error: 'Failed to update clip' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+
+    if (!id) {
+      logger.warn('Missing clip id', context);
+      return NextResponse.json(
+        { error: 'Clip id is required' },
+        { status: 400 }
+      );
+    }
+
+    const clipRepo = CasparClipRepository.getInstance();
+    await clipRepo.delete(Number(id));
+
+    logger.info('Clip deleted successfully', context, { clipId: id });
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    logger.error('Failed to delete clip', error, context);
+    return NextResponse.json(
+      { error: 'Failed to delete clip' },
       { status: 500 }
     );
   }

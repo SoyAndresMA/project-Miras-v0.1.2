@@ -4,13 +4,13 @@ import getDb from '@/db';
 
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: { serverId: string } }
 ) {
-  console.log(' Verificando estado del servidor:', params.id);
+  console.log(' Verificando estado del servidor:', params.serverId);
   try {
-    const serverId = parseInt(params.id);
+    const serverId = parseInt(params.serverId);
     if (isNaN(serverId)) {
-      console.error(' ID de servidor inválido:', params.id);
+      console.error(' ID de servidor inválido:', params.serverId);
       return NextResponse.json(
         { error: 'Invalid server ID' },
         { status: 400 }

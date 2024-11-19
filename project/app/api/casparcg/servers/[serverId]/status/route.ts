@@ -1,19 +1,20 @@
 import { NextResponse } from 'next/server';
-import getDb from '@/db';
+import getDb from '@/app/api/db';
+import { CasparServer } from '@/server/device/caspar/CasparServer';
 
 export async function POST(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: { serverId: string } }
 ) {
   try {
-    const { connected } = await request.json();
+    const { connected, mediaFiles } = await request.json();
     const db = await getDb();
     
     await db.run(`
       UPDATE casparcg_servers 
-      SET last_connection = CURRENT_TIMESTAMP
+      SET media_files = ?, last_connection = CURRENT_TIMESTAMP
       WHERE id = ?
-    `, [params.id]);
+    `, [mediaFiles, params.serverId]);
 
     return NextResponse.json({ success: true });
   } catch (error) {

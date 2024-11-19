@@ -1,17 +1,34 @@
 import { NextResponse } from 'next/server';
-import getDb from '@/db';
+import { ProjectRepository } from '../../repositories/project.repository';
+import { EventRepository } from '../../repositories/event.repository';
+import { ItemUnionRepository } from '../../repositories/item-union.repository';
+import { CasparClipRepository } from '../../repositories/caspar-clip.repository';
+import { CasparMicRepository } from '../../repositories/caspar-mic.repository';
+import { CasparGraphRepository } from '../../repositories/caspar-graph.repository';
+import { LoggerService } from '@/lib/services/logger.service';
+
+const logger = LoggerService.getInstance();
+const context = 'ProjectAPI';
 
 export async function GET(
   request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
-    const db = await getDb();
+    const projectRepo = ProjectRepository.getInstance();
+    const eventRepo = EventRepository.getInstance();
+    const unionRepo = ItemUnionRepository.getInstance();
+    const clipRepo = CasparClipRepository.getInstance();
+    const micRepo = CasparMicRepository.getInstance();
+    const graphRepo = CasparGraphRepository.getInstance();
+
+    logger.debug('Fetching project details', context, { projectId: params.id });
     
     // Get project details
-    const project = await db.get('SELECT * FROM projects WHERE id = ?', params.id);
+    const project = await projectRepo.findById(parseInt(params.id));
     
     if (!project) {
+      logger.warn('Project not found', context, { projectId: params.id });
       return NextResponse.json(
         { error: 'Project not found' },
         { status: 404 }
@@ -19,89 +36,71 @@ export async function GET(
     }
 
     // Get project events with their unions
-    const events = await db.all(`
-      SELECT 
-        e.*,
-        u.name as union_name,
-        u.icon as union_icon,
-        u.description as union_description
-      FROM mevents e
-      LEFT JOIN mevent_unions u ON e.event_union_id = u.id
-      WHERE e.project_id = ?
-      ORDER BY e.event_order
-    `, params.id);
+    const events = await eventRepo.findByProjectId(parseInt(params.id));
+    const eventIds = events.map(e => e.id);
 
-    // Get all items for this project's events
-    const items = await db.all(`
-      SELECT 
-        ip.id as position_id,
-        ip.event_id,
-        ip.item_type,
-        ip.item_id,
-        ip.position_row,
-        ip.position_column,
-        CASE ip.item_type
-          WHEN 'CasparClip' THEN json_object(
-            'id', cc.id,
-            'name', cc.name,
-            'file_path', cc.file_path,
-            'channel', cc.channel,
-            'layer', cc.layer,
-            'loop', cc.loop,
-            'auto_start', cc.auto_start,
-            'transition_type', cc.transition_type,
-            'transition_duration', cc.transition_duration
-          )
-          WHEN 'casparCamera' THEN json_object(
-            'id', cam.id,
-            'name', cam.name,
-            'device_id', cam.device_id,
-            'channel', cam.channel,
-            'layer', cam.layer,
-            'preview_enabled', cam.preview_enabled
-          )
-          WHEN 'casparGraphic' THEN json_object(
-            'id', cg.id,
-            'name', cg.name,
-            'file_path', cg.file_path,
-            'channel', cg.channel,
-            'layer', cg.layer,
-            'template_data', cg.template_data
-          )
-          WHEN 'casparMicrophone' THEN json_object(
-            'id', cm.id,
-            'name', cm.name,
-            'device_id', cm.device_id,
-            'channel', cm.channel,
-            'layer', cm.layer,
-            'volume', cm.volume
-          )
-          ELSE NULL
-        END as item_data
-      FROM item_positions ip
-      LEFT JOIN caspar_clips cc ON ip.item_type = 'CasparClip' AND ip.item_id = cc.id
-      LEFT JOIN caspar_cameras cam ON ip.item_type = 'casparCamera' AND ip.item_id = cam.id
-      LEFT JOIN caspar_graphics cg ON ip.item_type = 'casparGraphic' AND ip.item_id = cg.id
-      LEFT JOIN caspar_microphones cm ON ip.item_type = 'casparMicrophone' AND ip.item_id = cm.id
-      WHERE ip.event_id IN (SELECT id FROM mevents WHERE project_id = ?)
-      ORDER BY ip.event_id, ip.position_row, ip.position_column
-    `, params.id);
+    // Get unions for all events
+    const unions = await unionRepo.findByEventIds(eventIds);
+    const unionsMap = new Map(unions.map(u => [u.id, u]));
 
-    // Transform items into their proper structure
-    const transformedItems = items.map(item => ({
-      id: item.position_id,
-      eventId: item.event_id,
-      type: item.item_type,
-      ...JSON.parse(item.item_data || '{}'),
-      position: {
-        row: item.position_row,
-        column: item.position_column
+    // Get all items for this project's events using specific repositories
+    const [clips, mics, graphics] = await Promise.all([
+      clipRepo.findByEventIds(eventIds),
+      micRepo.findByEventIds(eventIds),
+      graphRepo.findByEventIds(eventIds)
+    ]);
+
+    // Create a map of all items with their positions
+    const itemsMap = new Map();
+    
+    // Add clips
+    for (const clip of clips) {
+      const position = await clipRepo.getPosition(clip.id);
+      if (position) {
+        itemsMap.set(`CasparClip-${clip.id}`, {
+          id: clip.id,
+          eventId: clip.event_id,
+          type: 'CasparClip',
+          ...clip,
+          position
+        });
       }
-    }));
+    }
+
+    // Add mics
+    for (const mic of mics) {
+      const position = await micRepo.getPosition(mic.id);
+      if (position) {
+        itemsMap.set(`casparMicrophone-${mic.id}`, {
+          id: mic.id,
+          eventId: mic.event_id,
+          type: 'casparMicrophone',
+          ...mic,
+          position
+        });
+      }
+    }
+
+    // Add graphics
+    for (const graphic of graphics) {
+      const position = await graphRepo.getPosition(graphic.id);
+      if (position) {
+        itemsMap.set(`casparGraphic-${graphic.id}`, {
+          id: graphic.id,
+          eventId: graphic.event_id,
+          type: 'casparGraphic',
+          ...graphic,
+          position
+        });
+      }
+    }
 
     // Format events with their unions and items
-    const formattedEvents = events.map((event: any) => {
-      const eventItems = transformedItems.filter((item: any) => item.eventId === event.id);
+    const formattedEvents = events.map(event => {
+      const eventItems = Array.from(itemsMap.values())
+        .filter(item => item.eventId === event.id);
+
+      const union = unionsMap.get(event.event_union_id);
 
       return {
         id: event.id,
@@ -110,25 +109,66 @@ export async function GET(
         event_order: event.event_order,
         event_union_id: event.event_union_id,
         items: eventItems,
-        munion: event.union_name ? {
-          id: event.event_union_id,
-          name: event.union_name,
-          icon: event.union_icon,
-          description: event.union_description
+        munion: union ? {
+          id: union.id,
+          name: union.name,
+          icon: union.icon,
+          description: union.description
         } : null
       };
+    });
+
+    logger.info('Project fetched successfully', context, { 
+      projectId: params.id,
+      eventCount: events.length,
+      itemCount: itemsMap.size
     });
 
     // Return project with its events and items
     return NextResponse.json({
       ...project,
       events: formattedEvents,
-      items: transformedItems
+      items: Array.from(itemsMap.values())
     });
   } catch (error) {
-    console.error('Error fetching project:', error);
+    logger.error('Failed to fetch project', error as Error, context, { projectId: params.id });
     return NextResponse.json(
       { error: 'Failed to fetch project' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PUT(
+  request: Request,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const projectRepo = ProjectRepository.getInstance();
+    const input = await request.json();
+    const project = await projectRepo.update({ ...input, id: parseInt(params.id) });
+    return NextResponse.json(project);
+  } catch (error) {
+    console.error('Error updating project:', error);
+    return NextResponse.json(
+      { error: 'Failed to update project' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const projectRepo = ProjectRepository.getInstance();
+    await projectRepo.delete(parseInt(params.id));
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting project:', error);
+    return NextResponse.json(
+      { error: 'Failed to delete project' },
       { status: 500 }
     );
   }

@@ -1,22 +1,22 @@
 import { NextResponse } from 'next/server';
 import { CasparServer } from '@/server/device/caspar/CasparServer';
-import getDb from '@/db';
+import getDb from '@/app/api/db';
 
 export async function POST(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: { serverId: string } }
 ) {
-  console.log('Disconnecting from server ID:', params.id);
+  console.log('Disconnecting from server ID:', params.serverId);
   
   try {
     const db = await getDb();
     const server = await db.get(
       'SELECT * FROM casparcg_servers WHERE id = ?',
-      params.id
+      params.serverId
     );
     
     if (!server) {
-      console.error('Server not found:', params.id);
+      console.error('Server not found:', params.serverId);
       return NextResponse.json(
         { error: 'Server not found' },
         { status: 404 }
@@ -47,7 +47,7 @@ export async function POST(
       UPDATE casparcg_servers 
       SET enabled = ?, last_connection = CURRENT_TIMESTAMP
       WHERE id = ?
-    `, [0, params.id]);
+    `, [0, params.serverId]);
     
     return NextResponse.json({
       id: server.id,

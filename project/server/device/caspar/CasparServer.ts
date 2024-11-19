@@ -5,7 +5,7 @@ import { ConnectionConfig } from './types';
 import { CommandManager } from './connection/CommandManager';
 import { Logger } from './utils/Logger';
 import { Channel } from './Channel';
-import getDb from '../../../db';
+import { CasparServerRepository } from '@/app/api/repositories/caspar-server.repository';
 
 // Interfaces
 interface PlayOptions {
@@ -27,197 +27,184 @@ interface ServerState {
 }
 
 export class CasparServer extends EventEmitter {
-  private static instances: Map<number, CasparServer> = new Map();
-  
-  private logger: Logger;
+  private static instances: Map<string, CasparServer> = new Map();
+  private static repository: CasparServerRepository;
+  private stateManager: StateManager;
   private connectionManager: ConnectionManager;
   private commandManager: CommandManager;
-  private stateManager: StateManager;
-  private connected = false;
+  private logger: Logger;
+  private channels: Map<number, Channel>;
+  private config: ConnectionConfig;
+  private connected: boolean = false;
   private mediaFiles: string = '';
-  private id: number;
-  private name: string;
-  private host: string;
-  private port: number;
-  private enabled: boolean;
 
-  constructor(config: ConnectionConfig) {
+  private constructor(config: ConnectionConfig) {
     super();
     
-    this.id = config.id;
-    this.name = config.name;
-    this.host = config.host;
-    this.port = config.port;
+    this.config = config;
+    this.stateManager = new StateManager();
+    this.connectionManager = new ConnectionManager(config);
+    this.commandManager = new CommandManager(this.connectionManager);
+    this.logger = new Logger(`CasparServer:${config.id}`);
+    this.channels = new Map();
     
-    this.logger = new Logger(`CasparServer:${this.id}`);
+    if (!CasparServer.repository) {
+      CasparServer.repository = new CasparServerRepository();
+    }
     
-    const connectionOptions: ConnectionConfig = {
-      id: this.id,
-      name: this.name,
-      host: this.host,
-      port: this.port,
-      timeout: config.timeout || 10000
-    };
-
-    // Primero crear el CommandManager
-    this.commandManager = new CommandManager(this.logger, config.timeout || 10000);
-    
-    // Luego crear el ConnectionManager pasándole el CommandManager
-    this.connectionManager = new ConnectionManager(
-      this.logger,
-      connectionOptions,
-      this.commandManager
-    );
-
-    this.stateManager = new StateManager(this.logger);
-
-    this.setupEventListeners();
+    this.setupEventHandlers();
   }
 
-  static async getInstance(config: ConnectionConfig): Promise<CasparServer> {
-    if (!config || typeof config.id !== 'number') {
-      throw new Error('Invalid server configuration: missing or invalid id');
+  static getInstance(config: ConnectionConfig): CasparServer {
+    const key = `${config.host}:${config.port}`;
+    
+    if (!this.instances.has(key)) {
+      this.instances.set(key, new CasparServer(config));
     }
+    
+    return this.instances.get(key)!;
+  }
 
-    let server = CasparServer.instances.get(config.id);
-    if (!server) {
-      server = new CasparServer(config);
-      CasparServer.instances.set(config.id, server);
-    } else {
-      // Actualizar la configuración si el servidor ya existe
-      await server.updateConfig(config);
+  async initialize(): Promise<void> {
+    try {
+      // Actualizar el estado en la base de datos
+      await CasparServer.repository.updateServerState(this.config.id.toString(), {
+        connected: false,
+        lastError: null,
+        lastConnectionAttempt: new Date()
+      });
+
+      // Intentar conexión
+      await this.connect();
+      
+      // Si llegamos aquí, la conexión fue exitosa
+      this.connected = true;
+      
+      await CasparServer.repository.updateServerState(this.config.id.toString(), {
+        connected: true,
+        lastError: null,
+        lastSuccessfulConnection: new Date()
+      });
+      
+      // Inicializar canales y otros recursos
+      await this.initializeResources();
+      
+    } catch (error) {
+      this.connected = false;
+      
+      await CasparServer.repository.updateServerState(this.config.id.toString(), {
+        connected: false,
+        lastError: error.message,
+        lastErrorTime: new Date()
+      });
+      
+      throw error;
     }
-    return server;
+  }
+
+  private async initializeResources(): Promise<void> {
+    try {
+      await this.updateMediaFiles();
+      await this.parseInfoResponse(await this.sendCommand('INFO'));
+    } catch (error) {
+      this.logger.error('Error initializing resources:', error);
+      throw error;
+    }
   }
 
   async updateConfig(config: ConnectionConfig): Promise<void> {
-    this.id = config.id;
-    this.name = config.name;
-    this.host = config.host;
-    this.port = config.port;
-    this.enabled = config.enabled;
-    
+    this.config = config;
     // Actualizar las opciones de conexión
     const connectionOptions: ConnectionConfig = {
-      host: this.host,
-      port: this.port,
-      timeout: config.timeout || 10000
+      host: this.config.host,
+      port: this.config.port,
+      timeout: this.config.timeout || 10000
     };
     
     await this.connectionManager.updateOptions(connectionOptions);
   }
 
-  static getState(serverId: number): Promise<ServerState> {
-    const server = CasparServer.instances.get(serverId);
+  static async getState(serverId: number): Promise<ServerState> {
+    const repository = new CasparServerRepository();
+    const server = await repository.findById(serverId);
     if (!server) {
       throw new Error(`Server ${serverId} not found`);
     }
-    return Promise.resolve(server.getServerState());
-  }
-
-  async initialize(): Promise<void> {
-    this.logger.info('🚀 Inicializando servidor CasparCG...');
-    
-    try {
-      // Conectar al servidor
-      const connected = await this.connect();
-      if (!connected) {
-        throw new Error('Failed to connect to server');
-      }
-
-      // Esperar un momento para asegurar que la conexión está estable
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      // Obtener lista de archivos multimedia
-      await this.updateMediaFiles();
-
-      try {
-        // Actualizar estado en la base de datos
-        const db = await getDb();
-        await db.run(`
-          UPDATE casparcg_servers 
-          SET media_files = ?, last_connection = CURRENT_TIMESTAMP
-          WHERE id = ?
-        `, [this.mediaFiles, this.id]);
-      } catch (dbError) {
-        this.logger.warn('⚠️ No se pudo actualizar la base de datos:', dbError);
-        // Continuamos aunque falle la actualización de la BD
-      }
-
-      this.logger.info('✅ Servidor inicializado correctamente');
-    } catch (error) {
-      this.logger.error('❌ Error al inicializar servidor:', error);
-      throw error;
-    }
+    return {
+      version: server.version,
+      connected: server.enabled === true,
+      media_files: server.media_files,
+      lastActivity: server.last_connection
+    };
   }
 
   async connect(): Promise<boolean> {
-    this.logger.info(`🔄 Iniciando conexión al servidor ${this.name}...`);
+    this.logger.info(` Iniciando conexión al servidor ${this.config.name}...`);
     
     if (this.connected) {
-      this.logger.info('✅ Ya conectado al servidor');
+      this.logger.info(' Ya conectado al servidor');
       return true;
     }
 
     try {
-      this.logger.info(`📡 Intentando conectar a ${this.host}:${this.port}...`);
+      this.logger.info(` Intentando conectar a ${this.config.host}:${this.config.port}...`);
       const connected = await this.connectionManager.connect();
       
       if (connected) {
-        this.logger.info('✅ Conexión establecida exitosamente');
+        this.logger.info(' Conexión establecida exitosamente');
         this.setConnected(true);
 
         // Enviar VERSION sin esperar respuesta
-        this.logger.info('📤 Enviando comando VERSION (sin esperar respuesta)...');
+        this.logger.info(' Enviando comando VERSION (sin esperar respuesta)...');
         this.sendCommand('VERSION').catch(error => {
-          this.logger.warn('⚠️ No se pudo obtener VERSION, pero continuamos:', error);
+          this.logger.warn(' No se pudo obtener VERSION, pero continuamos:', error);
         });
 
         return true;
       } else {
-        this.logger.error('❌ No se pudo establecer la conexión');
+        this.logger.error(' No se pudo establecer la conexión');
         this.setConnected(false);
         return false;
       }
     } catch (error) {
-      this.logger.error('❌ Error durante la conexión:', error);
+      this.logger.error(' Error durante la conexión:', error);
       this.setConnected(false);
       return false;
     }
   }
 
   async disconnect(): Promise<void> {
-    this.logger.info('🔄 Desconectando servidor...');
+    this.logger.info(' Desconectando servidor...');
     
     if (!this.connected) {
-      this.logger.info('ℹ️ El servidor ya está desconectado');
+      this.logger.info(' El servidor ya está desconectado');
       return;
     }
 
     try {
       await this.connectionManager.disconnect();
       this.setConnected(false);
-      this.logger.info('✅ Servidor desconectado exitosamente');
+      this.logger.info(' Servidor desconectado exitosamente');
     } catch (error) {
-      this.logger.error('❌ Error al desconectar:', error);
+      this.logger.error(' Error al desconectar:', error);
       throw error;
     }
   }
 
   async sendCommand(command: string): Promise<any> {
-    this.logger.info(`📤 Enviando comando: ${command}`);
+    this.logger.info(` Enviando comando: ${command}`);
     
     if (!this.connected) {
-      this.logger.error('❌ No se puede enviar el comando: servidor no conectado');
+      this.logger.error(' No se puede enviar el comando: servidor no conectado');
       throw new Error('Server not connected');
     }
 
     try {
       const response = await this.commandManager.sendCommand(command);
-      this.logger.info(`✅ Respuesta recibida:`, response);
+      this.logger.info(` Respuesta recibida:`, response);
       return response;
     } catch (error) {
-      this.logger.error('❌ Error al enviar comando:', error);
+      this.logger.error(' Error al enviar comando:', error);
       throw error;
     }
   }
@@ -235,9 +222,9 @@ export class CasparServer extends EventEmitter {
     try {
       const response = await this.sendCommand('DATA LIST');
       this.mediaFiles = response;
-      this.logger.info('📁 Lista de archivos multimedia actualizada');
+      this.logger.info(' Lista de archivos multimedia actualizada');
     } catch (error) {
-      this.logger.error('❌ Error al obtener lista de archivos:', error);
+      this.logger.error(' Error al obtener lista de archivos:', error);
       this.mediaFiles = '';
     }
   }
@@ -246,7 +233,7 @@ export class CasparServer extends EventEmitter {
     return this.mediaFiles;
   }
 
-  private setupEventListeners(): void {
+  private setupEventHandlers(): void {
     // Eventos del ConnectionManager
     this.connectionManager.on('activity', (state) => {
       this.logger.debug('Actividad detectada:', state);
@@ -255,17 +242,23 @@ export class CasparServer extends EventEmitter {
 
     this.connectionManager.on('connect', () => {
       this.setConnected(true);
+      CasparServer.repository.updateState(this.config.id, { 
+        connected: true,
+        version: this.stateManager.getVersion()
+      });
       this.emit('stateChange', this.getServerState());
     });
 
     this.connectionManager.on('disconnect', () => {
       this.setConnected(false);
+      CasparServer.repository.updateState(this.config.id, { connected: false });
       this.emit('stateChange', this.getServerState());
     });
 
     this.connectionManager.on('error', (error) => {
       this.logger.error('Error de conexión:', error);
       this.setConnected(false);
+      CasparServer.repository.updateState(this.config.id, { connected: false });
       this.emit('stateChange', this.getServerState());
     });
 
@@ -323,7 +316,7 @@ export class CasparServer extends EventEmitter {
           status: rest[1] || 'UNKNOWN'
         };
         channels.push(channelInfo);
-        this.logger.info(`📺 Canal ${channelInfo.number}: ${channelInfo.format} (${channelInfo.status})`);
+        this.logger.info(` Canal ${channelInfo.number}: ${channelInfo.format} (${channelInfo.status})`);
       }
     }
 
@@ -335,7 +328,7 @@ export class CasparServer extends EventEmitter {
   }
 
   async play(options: PlayOptions): Promise<void> {
-    this.logger.info('🎬 Iniciando reproducción de clip', options);
+    this.logger.info(' Iniciando reproducción de clip', options);
     
     if (!this.connected) {
       throw new Error('Server not connected');
@@ -356,15 +349,15 @@ export class CasparServer extends EventEmitter {
       }
 
       await this.sendCommand(command);
-      this.logger.info('✅ Clip iniciado exitosamente');
+      this.logger.info(' Clip iniciado exitosamente');
     } catch (error) {
-      this.logger.error('❌ Error al reproducir clip:', error);
+      this.logger.error(' Error al reproducir clip:', error);
       throw error;
     }
   }
 
   async stop(channel: number, layer: number): Promise<void> {
-    this.logger.info(`⏹️ Deteniendo clip en canal ${channel}, capa ${layer}`);
+    this.logger.info(` Deteniendo clip en canal ${channel}, capa ${layer}`);
     
     if (!this.connected) {
       throw new Error('Server not connected');
@@ -372,9 +365,9 @@ export class CasparServer extends EventEmitter {
 
     try {
       await this.sendCommand(`STOP ${channel}-${layer}`);
-      this.logger.info('✅ Clip detenido exitosamente');
+      this.logger.info(' Clip detenido exitosamente');
     } catch (error) {
-      this.logger.error('❌ Error al detener clip:', error);
+      this.logger.error(' Error al detener clip:', error);
       throw error;
     }
   }

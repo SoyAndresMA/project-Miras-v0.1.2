@@ -1,56 +1,81 @@
 import { useState, useEffect } from 'react';
-import { ServerState } from '@/server/device/caspar/types';
+import { ServerManager } from '@/lib/services/ServerManager';
+import EventBus from '@/lib/events/EventBus';
 
-export function useServerState(serverId: number) {
-  const [state, setState] = useState<ServerState | null>(null);
-  const [error, setError] = useState<string | null>(null);
+interface ServerState {
+  connected: boolean;
+  loading: boolean;
+  error: string | null;
+}
+
+export function useServerState(serverId: string) {
+  const [state, setState] = useState<ServerState>({
+    connected: false,
+    loading: false,
+    error: null
+  });
 
   useEffect(() => {
-    let eventSource: EventSource;
+    const serverManager = ServerManager.getInstance();
+    
+    // Get initial state
+    const initialState = serverManager.getServerState(serverId);
+    setState(initialState);
 
-    const connectSSE = () => {
-      // Primero obtener el estado inicial
-      fetch(`/api/casparcg/servers/${serverId}/state`)
-        .then(res => {
-          if (!res.ok) {
-            throw new Error(`HTTP error! status: ${res.status}`);
-          }
-          return res.json();
-        })
-        .then(initialState => {
-          setState(initialState);
-          
-          // Luego conectar al SSE para actualizaciones
-          eventSource = new EventSource(`/api/casparcg/servers/${serverId}/events`);
-          
-          eventSource.onmessage = (event) => {
-            const newState = JSON.parse(event.data);
-            setState(newState);
-          };
+    // Subscribe to server state changes
+    const unsubscribe = serverManager.subscribeToServerState(serverId, setState);
 
-          eventSource.onerror = (error) => {
-            console.error('SSE Error:', error);
-            setError('Error en la conexión con el servidor');
-            eventSource.close();
-            // Reintentar conexión después de 5 segundos
-            setTimeout(connectSSE, 5000);
-          };
-        })
-        .catch(err => {
-          console.error('Error fetching initial state:', err);
-          setError('Error al obtener el estado inicial del servidor');
-        });
+    // Subscribe to EventBus events
+    const handleServerStatus = (event: any) => {
+      if (event.serverId.toString() === serverId) {
+        setState(prev => ({
+          ...prev,
+          connected: event.connected,
+          error: event.error || null,
+          loading: false
+        }));
+      }
     };
 
-    connectSSE();
+    EventBus.on('SERVER_STATUS', handleServerStatus);
 
-    // Limpiar al desmontar
     return () => {
-      if (eventSource) {
-        eventSource.close();
-      }
+      unsubscribe();
+      EventBus.off('SERVER_STATUS', handleServerStatus);
     };
   }, [serverId]);
 
-  return { state, error };
+  const connectServer = async () => {
+    setState(prev => ({ ...prev, loading: true, error: null }));
+    try {
+      const serverManager = ServerManager.getInstance();
+      await serverManager.connectServer(serverId);
+    } catch (error) {
+      setState(prev => ({ 
+        ...prev, 
+        error: error instanceof Error ? error.message : 'Unknown error',
+        loading: false 
+      }));
+    }
+  };
+
+  const disconnectServer = async () => {
+    setState(prev => ({ ...prev, loading: true, error: null }));
+    try {
+      const serverManager = ServerManager.getInstance();
+      await serverManager.disconnectServer(serverId);
+    } catch (error) {
+      setState(prev => ({ 
+        ...prev, 
+        error: error instanceof Error ? error.message : 'Unknown error',
+        loading: false 
+      }));
+    }
+  };
+
+  return {
+    state,
+    connectServer,
+    disconnectServer
+  };
 }

@@ -1,27 +1,37 @@
 import { NextResponse } from 'next/server';
 import { CasparServer } from '@/server/device/caspar/CasparServer';
+import { LoggerService } from '@/server/services/LoggerService';
+import { CasparServerRepository } from '@/server/repositories/CasparServerRepository';
+
+const logger = LoggerService.create('CasparStatusRoute');
 
 export async function GET() {
   try {
-    const server = await CasparServer.getInstance({
-      id: 1,
-      name: 'LENOVO',
-      host: '192.168.0.194',
-      port: 5250,
-      enabled: true
-    });
+    logger.debug('Getting CasparCG server status');
+    
+    const serverRepo = new CasparServerRepository();
+    const servers = await serverRepo.getAll();
+    
+    if (servers.length === 0) {
+      logger.warn('No CasparCG servers found in database');
+      return NextResponse.json({ message: 'No servers configured' }, { status: 404 });
+    }
 
-    const status = {
-      1: {
+    const status: Record<number, { connected: boolean }> = {};
+    
+    for (const serverConfig of servers) {
+      const server = await CasparServer.getInstance(serverConfig);
+      status[serverConfig.id] = {
         connected: server.isConnected()
-      }
-    };
+      };
+      logger.debug(`Server ${serverConfig.id} connection status: ${server.isConnected()}`);
+    }
 
     return NextResponse.json(status);
   } catch (error) {
-    console.error('Error getting server status:', error);
+    logger.error('Error getting CasparCG server status', { error });
     return NextResponse.json(
-      { error: 'Failed to get server status' },
+      { message: 'Internal server error' },
       { status: 500 }
     );
   }
