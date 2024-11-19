@@ -31,26 +31,47 @@ export class StateManager extends EventEmitter {
 
   stopStatusUpdates(): void {
     if (this.updateInterval) {
-      clearTimeout(this.updateInterval);
+      clearInterval(this.updateInterval);
       this.updateInterval = null;
     }
-    this.updateAttempts = 0;
   }
 
   private scheduleNextUpdate(): void {
-    const delay = this.updateAttempts >= this.MAX_UPDATE_ATTEMPTS ? 
-      this.RETRY_DELAY : this.UPDATE_INTERVAL;
+    this.updateInterval = setInterval(() => {
+      this.emit('requestUpdate');
+    }, this.UPDATE_INTERVAL);
+  }
 
-    this.updateInterval = setTimeout(() => {
-      this.emit('statusUpdate');
-      
-      // Solo incrementar intentos si estamos en modo de reintento
-      if (this.updateAttempts < this.MAX_UPDATE_ATTEMPTS) {
-        this.updateAttempts++;
-      }
-      
-      this.scheduleNextUpdate();
-    }, delay);
+  updateVersion(version: string): void {
+    this.state.version = version;
+    this.state.lastUpdate = Date.now();
+    this.emit('stateChanged', this.state);
+  }
+
+  updateChannelState(channelId: number, state: any): void {
+    if (!this.state.channels.has(channelId)) {
+      this.state.channels.set(channelId, new Channel(channelId));
+    }
+    
+    const channel = this.state.channels.get(channelId);
+    if (channel) {
+      channel.updateState(state);
+      this.state.lastUpdate = Date.now();
+      this.emit('stateChanged', this.state);
+    }
+  }
+
+  getState(): ServerStateData {
+    return this.state;
+  }
+
+  resetState(): void {
+    this.state = {
+      version: '',
+      channels: new Map(),
+      lastUpdate: 0
+    };
+    this.emit('stateChanged', this.state);
   }
 
   setVersion(version: string): void {
@@ -59,10 +80,6 @@ export class StateManager extends EventEmitter {
 
   addChannel(channel: Channel): void {
     this.state.channels.set(channel.id, channel);
-  }
-
-  getState(): ServerStateData {
-    return this.state;
   }
 
   updateSuccess(): void {

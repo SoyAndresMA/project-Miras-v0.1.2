@@ -29,25 +29,36 @@ class MItemEventHandler {
   }
 
   registerItem(item: CasparMClip) {
+    console.log(`Registering item ${item.id} in MItemEventHandler`);
     this.items.set(item.id, item);
   }
 
   unregisterItem(itemId: number) {
+    console.log(`Unregistering item ${itemId} from MItemEventHandler`);
     this.items.delete(itemId);
   }
 
   private async handleEvent(event: MItemEvent) {
+    console.log(`Handling event for item ${event.itemId}:`, event);
     const item = this.items.get(event.itemId);
-    if (!item) return;
+    
+    if (!item) {
+      console.warn(`No item found for id ${event.itemId}`);
+      return;
+    }
 
     try {
       switch (event.action) {
         case 'PLAY':
-          await item.execute();
+          console.log(`Executing play for item ${event.itemId}`);
+          await item.play();
           break;
         case 'STOP':
+          console.log(`Executing stop for item ${event.itemId}`);
           await item.stop();
           break;
+        default:
+          console.log(`Unhandled action ${event.action} for item ${event.itemId}`);
       }
     } catch (error) {
       console.error(`Error handling ${event.action} for item ${event.itemId}:`, error);

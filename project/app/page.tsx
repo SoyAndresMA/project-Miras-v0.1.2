@@ -15,6 +15,20 @@ export default function Home() {
       const projectData = e.detail;
       setProject(projectData);
       setEvents(projectData.events || []);
+
+      // Inicializar los clips del proyecto
+      const allItems = projectData.events?.flatMap((event: any) => event.items) || [];
+      try {
+        await fetch('/api/clips/initialize', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(allItems)
+        });
+      } catch (error) {
+        console.error('Error initializing clips:', error);
+      }
     };
 
     window.addEventListener('projectLoaded', handleProjectChange as unknown as EventListener);

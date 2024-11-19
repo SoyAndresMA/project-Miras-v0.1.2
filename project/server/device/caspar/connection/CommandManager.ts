@@ -2,6 +2,7 @@ import { EventEmitter } from 'events';
 import { AMCPResponse, CommandQueueItem } from '../types';
 import { Logger } from '../utils/Logger';
 import { Parser } from '../utils/Parser';
+import * as net from 'net';
 
 interface PendingCommand {
   command: string;
@@ -15,6 +16,8 @@ export class CommandManager extends EventEmitter {
   private pendingCommands: Map<string, PendingCommand> = new Map();
   private responseBuffer: string = '';
   private commandCounter: number = 0;
+  private socket: net.Socket | null = null; // Agregar la propiedad socket
+  private commandTimeout: number = 5000; // Agregar la propiedad commandTimeout
 
   constructor(
     private logger: Logger,
@@ -23,200 +26,125 @@ export class CommandManager extends EventEmitter {
     super();
   }
 
-  async sendCommand(command: string, args: string[] = []): Promise<AMCPResponse> {
-    // Formatear los argumentos según el protocolo AMCP
-    const formattedArgs = args.map(arg => {
-      // Si el argumento contiene espacios, encerrarlo en comillas
-      if (arg.includes(' ')) {
-        // Escapar caracteres especiales
-        const escaped = arg
-          .replace(/\\/g, '\\\\')  // Escapar backslash
-          .replace(/"/g, '\\"')    // Escapar comillas
-          .replace(/\n/g, '\\n');  // Escapar nueva línea
-        return `"${escaped}"`;
-      }
-      return arg;
-    });
+  setSocket(socket: net.Socket | null) {
+    this.socket = socket;
+    this.logger.info(socket ? '✅ Socket establecido en CommandManager' : '🔄 Socket removido de CommandManager');
+  }
 
-    // Construir el comando AMCP
-    const fullCommand = [command.toUpperCase(), ...formattedArgs].join(' ');
-    
-    // Añadir CRLF según el protocolo
-    const commandString = `${fullCommand}\r\n`;
-    
-    this.logger.debug(` Enviando comando: ${fullCommand}`);
+  async sendCommand(command: string): Promise<string> {
+    const commandId = `cmd_${this.commandCounter++}`;
+    this.logger.info(`[CMD:${commandId}] 📤 Enviando comando: ${command}`);
 
-    return new Promise<AMCPResponse>((resolve, reject) => {
-      const commandId = (++this.commandCounter).toString();
-      
-      // Configurar timeout
-      const timeoutId = setTimeout(() => {
-        if (this.pendingCommands.has(commandId)) {
-          const error = new Error(`Timeout en comando [${commandId}]: ${command}`);
-          this.logger.error(' ', error.message);
-          this.pendingCommands.delete(commandId);
-          reject(error);
+    return new Promise((resolve, reject) => {
+      try {
+        if (!this.socket) {
+          throw new Error('Socket no está disponible');
         }
-      }, this.timeout);
 
-      // Guardar el comando pendiente
-      this.pendingCommands.set(commandId, {
-        command,
-        resolve,
-        reject,
-        timeout: timeoutId,
-        timestamp: Date.now()
-      });
+        // Asegurarse de que el comando termina con \r\n
+        const formattedCommand = command.trim() + '\r\n';
+        
+        // Intentar escribir en el socket
+        const writeSuccess = this.socket.write(formattedCommand, 'utf8', (error) => {
+          if (error) {
+            this.logger.error(`[CMD:${commandId}] ❌ Error al escribir en el socket:`, error);
+            reject(error);
+            return;
+          }
+          this.logger.info(`[CMD:${commandId}] ✅ Comando enviado correctamente al socket`);
+        });
 
-      // Emitir el comando para ser enviado
-      this.emit('command', commandString);
+        if (!writeSuccess) {
+          throw new Error('No se pudo escribir en el socket (buffer lleno)');
+        }
+
+        // Configurar el timeout y guardar la promesa pendiente
+        const timeout = setTimeout(() => this.handleCommandTimeout(commandId), this.commandTimeout);
+        this.pendingCommands.set(commandId, {
+          command,
+          resolve,
+          reject,
+          timeout,
+          timestamp: Date.now()
+        });
+
+      } catch (error) {
+        this.logger.error(`[CMD:${commandId}] ❌ Error al enviar comando:`, error);
+        reject(error);
+      }
     });
   }
 
-  handleData(data: Buffer): void {
-    // Añadir los datos al buffer
-    this.responseBuffer += data.toString();
+  handleResponse(response: string) {
+    this.logger.debug(`📥 Respuesta raw recibida: "${response}"`);
+    
+    // Acumular la respuesta en el buffer
+    this.responseBuffer += response;
 
-    // Procesar líneas completas (terminadas en CRLF)
+    // Procesar respuestas completas (terminadas en \r\n)
     while (this.responseBuffer.includes('\r\n')) {
       const lineEndIndex = this.responseBuffer.indexOf('\r\n');
       const line = this.responseBuffer.substring(0, lineEndIndex);
       this.responseBuffer = this.responseBuffer.substring(lineEndIndex + 2);
 
-      this.handleResponseLine(line);
-    }
-  }
+      this.logger.info(`📥 Procesando línea: "${line}"`);
 
-  private handleResponseLine(line: string): void {
-    this.logger.debug(` Respuesta recibida: ${line}`);
+      // Si es una línea de estado (comienza con número)
+      if (/^\d{3}/.test(line)) {
+        const statusCode = parseInt(line.substring(0, 3));
+        this.logger.info(`📊 Código de estado: ${statusCode}`);
 
-    // Manejar respuesta de VERSION específicamente
-    if (line.startsWith('201 VERSION')) {
-      const response: AMCPResponse = {
-        code: 201,
-        status: 'OK',
-        data: line.substring(4).trim()
-      };
-      this.handleSuccessResponse(response);
-      return;
-    }
+        // Si hay comandos pendientes
+        if (this.pendingCommands.size > 0) {
+          const [commandId, pendingCommand] = Array.from(this.pendingCommands.entries())[0];
+          
+          // Acumular la respuesta completa
+          let fullResponse = line;
+          
+          // Si es una respuesta multilinea (200 o 201)
+          if (statusCode === 200 || statusCode === 201) {
+            this.logger.info(`[CMD:${commandId}] 📝 Respuesta multilinea, acumulando datos...`);
+            
+            // Acumular líneas adicionales hasta encontrar una línea vacía
+            while (this.responseBuffer.length > 0 && !this.responseBuffer.startsWith('\r\n')) {
+              const nextLineEnd = this.responseBuffer.indexOf('\r\n');
+              if (nextLineEnd === -1) break;
+              
+              const nextLine = this.responseBuffer.substring(0, nextLineEnd);
+              this.responseBuffer = this.responseBuffer.substring(nextLineEnd + 2);
+              
+              fullResponse += '\r\n' + nextLine;
+              this.logger.debug(`[CMD:${commandId}] 📝 Línea adicional: "${nextLine}"`);
+            }
+          }
 
-    // Parsear la respuesta según el protocolo AMCP
-    const match = line.match(/^(\d{3})\s+((?:OK|ERROR|FAILED)(?:\s+(.+))?)/i);
-    
-    if (!match) {
-      // Acumular datos adicionales para el comando actual
-      const [commandId] = this.findOldestPendingCommand();
-      if (commandId && line.trim()) {
-        const pending = this.pendingCommands.get(commandId);
-        if (pending) {
-          const response: AMCPResponse = {
-            code: 200,
-            status: 'OK',
-            data: line.trim()
-          };
-          this.handleSuccessResponse(response);
+          this.logger.info(`[CMD:${commandId}] ✅ Respuesta completa recibida: "${fullResponse}"`);
+          clearTimeout(pendingCommand.timeout);
+          this.pendingCommands.delete(commandId);
+          pendingCommand.resolve(fullResponse);
+        } else {
+          this.logger.warn('⚠️ Respuesta recibida sin comandos pendientes:', line);
         }
-      }
-      return;
-    }
-
-    const [, code, status, data] = match;
-    const response: AMCPResponse = {
-      code: parseInt(code),
-      status: status.toUpperCase(),
-      data: data || ''
-    };
-
-    // Clasificar el código de respuesta
-    const codeType = Math.floor(response.code / 100);
-    switch (codeType) {
-      case 1: // 100-199: Información
-        this.logger.info(` ${response.data}`);
-        break;
-      case 2: // 200-299: Éxito
-        this.handleSuccessResponse(response);
-        break;
-      case 4: // 400-499: Error de cliente
-        this.handleClientError(response);
-        break;
-      case 5: // 500-599: Error de servidor
-        this.handleServerError(response);
-        break;
-      default:
-        this.logger.warn(` Código de respuesta desconocido: ${response.code}`);
-    }
-  }
-
-  private handleSuccessResponse(response: AMCPResponse): void {
-    // Buscar el comando pendiente más antiguo
-    const [commandId] = this.findOldestPendingCommand();
-    
-    if (commandId) {
-      const pending = this.pendingCommands.get(commandId)!;
-      clearTimeout(pending.timeout);
-      this.pendingCommands.delete(commandId);
-      pending.resolve(response);
-    }
-  }
-
-  private handleClientError(response: AMCPResponse): void {
-    const [commandId, pending] = this.findOldestPendingCommand();
-    
-    if (commandId && pending) {
-      clearTimeout(pending.timeout);
-      this.pendingCommands.delete(commandId);
-      
-      const error = new Error(`Error de cliente: ${response.data || 'Error desconocido'}`);
-      error.name = 'AMCPClientError';
-      pending.reject(error);
-    }
-  }
-
-  private handleServerError(response: AMCPResponse): void {
-    const [commandId, pending] = this.findOldestPendingCommand();
-    
-    if (commandId && pending) {
-      clearTimeout(pending.timeout);
-      this.pendingCommands.delete(commandId);
-      
-      const error = new Error(`Error de servidor: ${response.data || 'Error interno'}`);
-      error.name = 'AMCPServerError';
-      pending.reject(error);
-    }
-  }
-
-  private findOldestPendingCommand(): [string, PendingCommand] | [null, null] {
-    let oldestId: string | null = null;
-    let oldestCommand: PendingCommand | null = null;
-    let oldestTime = Infinity;
-
-    for (const [id, command] of this.pendingCommands.entries()) {
-      if (command.timestamp < oldestTime) {
-        oldestId = id;
-        oldestCommand = command;
-        oldestTime = command.timestamp;
+      } else {
+        this.logger.info('📄 Línea adicional recibida:', line);
       }
     }
-
-    return oldestId && oldestCommand ? [oldestId, oldestCommand] : [null, null];
   }
 
-  clearPendingCommands(): void {
-    for (const [id, pending] of this.pendingCommands.entries()) {
-      clearTimeout(pending.timeout);
-      pending.reject(new Error('Comando cancelado'));
+  private handleCommandTimeout(commandId: string) {
+    const pendingCommand = this.pendingCommands.get(commandId);
+    if (pendingCommand) {
+      this.logger.error(`[CMD:${commandId}] ❌ ⏰ Timeout para comando: ${pendingCommand.command}`);
+      this.pendingCommands.delete(commandId);
+      pendingCommand.reject(new Error(`Command timeout after ${this.commandTimeout}ms`));
     }
-    this.pendingCommands.clear();
   }
 
-  parseChannelInfo(info: string): any[] {
-    return Parser.parseChannelInfo(info);
+  clearPendingCommands() {
+    for (const [commandId, command] of this.pendingCommands.entries()) {
+      clearTimeout(command.timeout);
+      command.reject(new Error('Connection closed'));
+      this.pendingCommands.delete(commandId);
+    }
   }
-}
-
-interface AMCPResponse {
-  code: number;
-  status: 'OK' | 'ERROR';
-  data: string;
 }

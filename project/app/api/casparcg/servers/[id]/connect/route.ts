@@ -26,7 +26,7 @@ export async function POST(
     console.log('Found server:', server);
     
     try {
-      const casparServer = CasparServer.getInstance({
+      const casparServer = await CasparServer.getInstance({
         id: server.id,
         name: server.name,
         host: server.host,
@@ -42,29 +42,24 @@ export async function POST(
       });
 
       console.log('Attempting to connect to server:', server.name);
-      const connected = await casparServer.connect();
+      await casparServer.initialize();
+      const serverState = await CasparServer.getState(server.id);
       
-      if (!connected) {
+      if (!serverState.connected) {
         console.error('Failed to connect to server:', server.name);
         return NextResponse.json(
           { 
             error: 'Failed to connect to server',
-            details: `Could not establish connection to ${server.name} (${server.host}:${server.port})`
+            details: 'Connection attempt failed'
           },
           { status: 500 }
         );
       }
 
-      return NextResponse.json({ 
+      return NextResponse.json({
         success: true,
-        message: `Successfully connected to ${server.name}`,
-        server: {
-          id: server.id,
-          name: server.name,
-          host: server.host,
-          port: server.port,
-          connected: true
-        }
+        message: 'Connected successfully',
+        state: serverState
       });
 
     } catch (error: any) {

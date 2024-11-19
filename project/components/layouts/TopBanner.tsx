@@ -99,10 +99,10 @@ export function TopBanner({
         </div>
         
         <div className="flex items-center space-x-1">
-          <span className="font-semibold">Miras</span>
-          <span className="text-gray-400 text-sm">{appVersion}</span>
-          <span className="text-gray-400 mx-1">-</span>
-          <span className="text-gray-300">
+          <span key="brand" className="font-semibold">Miras</span>
+          <span key="version" className="text-gray-400 text-sm">{appVersion}</span>
+          <span key="separator" className="text-gray-400 mx-1">-</span>
+          <span key="project" className="text-gray-300">
             {loading ? 'Loading...' : (currentProject?.name || "No project")}
           </span>
         </div>
@@ -111,12 +111,15 @@ export function TopBanner({
       {/* CasparCG Servers Status */}
       <div className="flex-1 flex items-center justify-center space-x-2">
         {servers.map((server) => (
-          <div key={server.id} className="flex items-center space-x-2">
+          <div key={`server-${server.id}`} className="flex items-center space-x-2">
             <div 
+              key={`status-${server.id}`}
               className={`relative w-4 h-4 rounded-full ${
                 server.connected ? 'bg-green-500' : 'bg-red-500'
-              } cursor-pointer`}
+              } ${server.enabled ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed'}`}
               onDoubleClick={async () => {
+                if (!server.enabled) return;
+                
                 if (!server.connected) {
                   try {
                     const response = await fetch(`/api/casparcg/servers/${server.id}/connect`, {
@@ -143,31 +146,32 @@ export function TopBanner({
                   }
                 }
               }}
+              title={`${server.name} (${server.host}:${server.port})\nDouble click to ${server.connected ? 'disconnect' : 'connect'}`}
             >
               {server.loading && (
                 <Loader2 className="absolute inset-0 w-full h-full animate-spin text-white" />
               )}
             </div>
-            <span className="text-sm font-medium">{server?.name || 'No Server'}</span>
+            <span className="text-sm font-medium">{server.name || 'No Server'}</span>
           </div>
         ))}
       </div>
       
       <div className="flex items-center space-x-2">
-        <span className={cn(
+        <span key="status" className={cn(
           "text-gray-400 text-sm",
           error && "text-red-400",
           "flex items-center gap-1"
         )}>
-          {error && <AlertCircle className="h-4 w-4" />}
+          {error && <AlertCircle key="error-icon" className="h-4 w-4" />}
           {error || dynamicInfo}
         </span>
-        <div className="flex items-center space-x-1">
+        <div key="actions" className="flex items-center space-x-1">
           {isSaving && (
-            <Save className="h-4 w-4 text-blue-400 animate-pulse" />
+            <Save key="save-icon" className="h-4 w-4 text-blue-400 animate-pulse" />
           )}
-          <Heart className="h-4 w-4 text-gray-400 hover:text-gray-300 transition-colors" />
-          <Share className="h-4 w-4 text-gray-400 hover:text-gray-300 transition-colors" />
+          <Heart key="heart-icon" className="h-4 w-4 text-gray-400 hover:text-gray-300 transition-colors" />
+          <Share key="share-icon" className="h-4 w-4 text-gray-400 hover:text-gray-300 transition-colors" />
         </div>
       </div>
     </div>

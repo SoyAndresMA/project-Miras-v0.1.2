@@ -1,6 +1,7 @@
 import { DeviceConfig } from '@/lib/types/device';
+import { EventEmitter } from 'events';
 
-export abstract class DeviceManager {
+export abstract class DeviceManager extends EventEmitter {
   protected id: number;
   protected name: string;
   protected host: string;
@@ -10,6 +11,7 @@ export abstract class DeviceManager {
   protected config: DeviceConfig;
 
   constructor(config: DeviceConfig) {
+    super();
     this.id = config.id;
     this.name = config.name;
     this.host = config.host;

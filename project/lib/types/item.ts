@@ -39,13 +39,14 @@ export interface MItemState {
 
 export interface CasparMClipConfig {
   id: number;
-  event_id: number;
   name: string;
   file_path: string;
-  channel: number;
-  layer: number;
-  loop: boolean;
+  channel?: number;
+  layer?: number;
+  loop?: boolean;
   transition_type?: string;
   transition_duration?: number;
   auto_start?: boolean;
+  position_row: number;
+  position_column: number;
 }

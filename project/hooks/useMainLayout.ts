@@ -6,7 +6,7 @@ import { Project } from '@/lib/types/project';
 import { MenuSection } from '@/lib/types/layout';
 import { DeviceConfig } from '@/lib/types/device';
 
-const initialState: MainLayoutState = {
+const defaultInitialState: MainLayoutState = {
   currentProject: null,
   isMenuOpen: false,
   dynamicInfo: '',
@@ -23,28 +23,54 @@ const initialState: MainLayoutState = {
   servers: []
 };
 
-export function useMainLayout() {
+export function useMainLayout(initialState: MainLayoutState = defaultInitialState) {
   const [state, setState] = useState<MainLayoutState>(initialState);
 
+  // Efecto para comprobar el estado periódicamente
   useEffect(() => {
-    initializeServers();
-  }, []);
+    let mounted = true;
+    let intervalId: NodeJS.Timeout;
+    
+    const checkServerStatus = async () => {
+      if (!mounted) return;
+      
+      try {
+        const response = await fetch('/api/casparcg/status');
+        if (!response.ok) throw new Error('Failed to fetch server status');
+        
+        const status = await response.json();
+        
+        setState(prev => ({
+          ...prev,
+          servers: prev.servers.map(server => ({
+            ...server,
+            ...status[server.id],
+            name: status[server.id]?.name || server.name,
+            connected: status[server.id]?.connected || false
+          }))
+        }));
+      } catch (error) {
+        console.debug('Server status check failed:', error);
+        // No actualizamos el estado aquí para permitir operación sin servidor
+      }
+    };
 
-  const initializeServers = async () => {
-    try {
-      const response = await fetch('/api/casparcg/servers');
-      const servers = await response.json();
-      setState(prev => ({
-        ...prev,
-        servers: servers.map((server: DeviceConfig) => ({
-          ...server,
-          connected: false // Initial state, will be updated by WebSocket
-        }))
-      }));
-    } catch (error) {
-      console.error('Error loading servers:', error);
+    // Solo iniciamos el polling si hay servidores configurados
+    if (state.servers.length > 0) {
+      // Hacemos una verificación inicial
+      checkServerStatus();
+      
+      // Configuramos el polling cada 5 segundos
+      intervalId = setInterval(checkServerStatus, 5000);
     }
-  };
+
+    return () => {
+      mounted = false;
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [state.servers.length]); // Solo se reinicia si cambia el número de servidores
 
   const setIsMenuOpen = useCallback((isOpen: boolean) => {
     setState(prev => ({ ...prev, isMenuOpen: isOpen }));
@@ -133,6 +159,10 @@ export function useMainLayout() {
     setState(prev => ({ ...prev, menuItems: items }));
   }, []);
 
+  const setDynamicInfo = useCallback((info: string) => {
+    setState(prev => ({ ...prev, dynamicInfo: info }));
+  }, []);
+
   return {
     state,
     actions: {
@@ -142,7 +172,8 @@ export function useMainLayout() {
       loadFullProject,
       saveProject,
       closeProject,
-      setMenuItems
+      setMenuItems,
+      setDynamicInfo
     }
   };
 }

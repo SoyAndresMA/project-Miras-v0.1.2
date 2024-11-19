@@ -33,7 +33,7 @@ export async function GET(
     }
 
     // Solo obtener el estado si ya existe una instancia del servidor
-    const server = CasparServer.getInstance({
+    await CasparServer.getInstance({
       id: serverConfig.id,
       name: serverConfig.name,
       host: serverConfig.host,
@@ -42,12 +42,11 @@ export async function GET(
       commandTimeout: serverConfig.command_timeout || 5000
     });
 
-    // Verificar si el servidor está conectado sin intentar conectarlo
-    const isConnected = server.isConnected();
+    const serverState = await CasparServer.getState(serverConfig.id);
     
     return NextResponse.json({
-      connected: isConnected,
-      version: isConnected ? server.getServerState().version : null
+      connected: serverState.connected,
+      version: serverState.version
     });
   } catch (error) {
     console.error(' Error al obtener estado del servidor:', error);
