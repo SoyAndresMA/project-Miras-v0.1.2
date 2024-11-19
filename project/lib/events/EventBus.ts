@@ -1,41 +1,69 @@
 import { EventEmitter } from 'events';
 import Logger from '../utils/logger';
+import { SpecificItemType, PlaybackState } from '../types/item';
 
-// Tipos de eventos posibles
-export type MItemEventType = 
+// Tipos de eventos base
+export type BaseEventType = 
   | 'PLAY'           // Solicitud de reproducción
   | 'STOP'           // Solicitud de detención
   | 'STATE_CHANGE'   // Cambio de estado
   | 'ERROR';         // Error en alguna operación
 
-// Tipos de items soportados
-export type MItemType = 'casparMClip' | 'obsMClip';
+// Eventos específicos por tipo de item
+export type CasparClipEventType = BaseEventType | 'SEEK' | 'VOLUME_CHANGE';
+export type CasparCameraEventType = BaseEventType | 'PREVIEW' | 'SETTINGS';
+export type ObsClipEventType = BaseEventType | 'VISIBILITY' | 'TRANSITION';
 
-// Estado de reproducción
-export interface PlaybackState {
-  isPlaying: boolean;
-  error?: string;
-  currentTime?: number;
-  duration?: number;
-}
+// Mapa de tipos de eventos específicos
+export type ItemEventTypeMap = {
+  'casparClip': CasparClipEventType;
+  'casparCamera': CasparCameraEventType;
+  'casparMicrophone': BaseEventType;
+  'casparGraphic': BaseEventType;
+  'obsClip': ObsClipEventType;
+  'obsCamera': BaseEventType;
+  'obsGraphic': BaseEventType;
+  'obsMicrophone': BaseEventType;
+};
 
-// Estructura del evento
-export interface MItemEvent {
+// Interfaz base para eventos
+export interface BaseItemEvent<T extends SpecificItemType> {
   itemId: number;
-  type: MItemType;
-  action: MItemEventType;
+  type: T;
+  action: ItemEventTypeMap[T];
   state?: PlaybackState;
   error?: string;
+  metadata?: Record<string, unknown>;
 }
+
+// Tipos específicos de eventos
+export interface CasparClipEvent extends BaseItemEvent<'casparClip'> {
+  metadata?: {
+    currentTime?: number;
+    duration?: number;
+    volume?: number;
+  };
+}
+
+export interface CasparCameraEvent extends BaseItemEvent<'casparCamera'> {
+  metadata?: {
+    previewEnabled?: boolean;
+    settings?: Record<string, unknown>;
+  };
+}
+
+export type MItemEvent = BaseItemEvent<SpecificItemType>;
 
 class EventBus {
   private static instance: EventBus;
   private emitter: EventEmitter;
+  private logger: Logger;
 
   private constructor() {
     this.emitter = new EventEmitter();
     this.emitter.setMaxListeners(50);
-    Logger.info('EventBus', 'Initialize', 'EventBus initialized');
+    this.logger = new Logger('EventBus');
+    this.logger.info('EventBus initialized');
   }
 
   public static getInstance(): EventBus {
@@ -45,33 +73,41 @@ class EventBus {
     return EventBus.instance;
   }
 
-  emit(event: MItemEvent) {
-    Logger.info('EventBus', 'Emit', `Emitting event for item ${event.itemId}`, {
+  public emit<T extends SpecificItemType>(event: BaseItemEvent<T>) {
+    this.logger.debug('Emitting event', {
+      itemId: event.itemId,
       type: event.type,
       action: event.action,
-      state: event.state,
-      error: event.error
+      metadata: event.metadata
     });
+
+    // Emitir evento específico del tipo
+    this.emitter.emit(`${event.type}:${event.itemId}`, event);
     
-    this.emitter.emit('mitem-event', event);
+    // Emitir evento general para compatibilidad
+    this.emitter.emit('item:event', event);
   }
 
-  subscribe(callback: (event: MItemEvent) => void): () => void {
-    Logger.info('EventBus', 'Subscribe', 'New subscriber added');
-    
-    const wrappedCallback = (event: MItemEvent) => {
-      Logger.debug('EventBus', 'Handle', `Subscriber handling event for item ${event.itemId}`, {
-        type: event.type,
-        action: event.action
-      });
-      callback(event);
-    };
-
-    this.emitter.on('mitem-event', wrappedCallback);
+  public subscribe<T extends SpecificItemType>(
+    itemId: number,
+    type: T,
+    callback: (event: BaseItemEvent<T>) => void
+  ): () => void {
+    const eventName = `${type}:${itemId}`;
+    this.emitter.on(eventName, callback);
     
     return () => {
-      Logger.info('EventBus', 'Unsubscribe', 'Subscriber removed');
-      this.emitter.off('mitem-event', wrappedCallback);
+      this.emitter.off(eventName, callback);
+    };
+  }
+
+  public subscribeToAll(
+    callback: (event: MItemEvent) => void
+  ): () => void {
+    this.emitter.on('item:event', callback);
+    
+    return () => {
+      this.emitter.off('item:event', callback);
     };
   }
 }

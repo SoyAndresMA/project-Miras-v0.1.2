@@ -2,31 +2,27 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { Play, Square, AlertCircle } from 'lucide-react';
 import { cn } from "@/lib/utils";
 import MItemUnion from './MItemUnion';
-import { MItemUnion as MItemUnionType } from '@/lib/types/item';
+import { CasparClip as CasparClipType, MItemUnion as MItemUnionType } from '@/lib/types/item';
 import EventBus, { MItemEvent, PlaybackState } from '@/lib/events/EventBus';
 import Logger from '../../lib/utils/logger';
 import { useToast } from "@/components/ui/use-toast";
 import { useMainLayout } from "@/hooks/useMainLayout";
 
-interface CasparMClipProps {
-  item: {
-    id: number;
-    title: string;
-    munion?: MItemUnionType;
-  };
+interface CasparClipProps {
+  item: CasparClipType;
   isActive?: boolean;
   onToggle?: () => void;
-  onUnionUpdate?: (itemId: number, union: MItemUnionType) => void;
+  onUnionUpdate?: (id: number, union: MItemUnionType) => void;
   uniqueKey?: string;
 }
 
-export default function CasparMClip({
+export default function CasparClip({
   item,
   isActive = false,
   onToggle,
   onUnionUpdate,
   uniqueKey
-}: CasparMClipProps) {
+}: CasparClipProps) {
   // Estado local
   const [playbackState, setPlaybackState] = useState<PlaybackState>({
     isPlaying: false,
@@ -41,16 +37,16 @@ export default function CasparMClip({
   const handleEvent = useCallback((event: MItemEvent) => {
     if (event.itemId !== item.id) return;
 
-    Logger.debug('CasparMClipUI', 'HandleEvent', `Received event for item ${item.id}`, event);
+    Logger.debug('CasparClipUI', 'HandleEvent', `Received event for item ${item.id}`, event);
 
     switch (event.action) {
       case 'STATE_CHANGE':
         if (event.state) {
-          Logger.info('CasparMClipUI', 'StateUpdate', `Updating state for item ${item.id}`, event.state);
+          Logger.info('CasparClipUI', 'StateUpdate', `Updating state for item ${item.id}`, event.state);
           setPlaybackState(event.state);
           
           if (event.state.isPlaying) {
-            actions.setDynamicInfo(`Playing: ${item.title}`);
+            actions.setDynamicInfo(`Playing: ${item.name}`);
           } else {
             actions.setDynamicInfo('');
           }
@@ -58,7 +54,7 @@ export default function CasparMClip({
         break;
 
       case 'ERROR':
-        Logger.error('CasparMClipUI', 'Error', `Error in item ${item.id}: ${event.error}`);
+        Logger.error('CasparClipUI', 'Error', `Error in item ${item.id}: ${event.error}`);
         toast({
           title: "Error",
           description: event.error,
@@ -66,31 +62,31 @@ export default function CasparMClip({
         });
         break;
     }
-  }, [item.id, item.title, actions, toast]);
+  }, [item.id, item.name, actions, toast]);
 
   // Suscribirse a eventos
   useEffect(() => {
-    Logger.info('CasparMClipUI', 'Mount', `Component mounted for item ${item.id}`);
+    Logger.info('CasparClipUI', 'Mount', `Component mounted for item ${item.id}`);
     const unsubscribe = EventBus.subscribe(handleEvent);
     
     return () => {
-      Logger.info('CasparMClipUI', 'Unmount', `Component unmounting for item ${item.id}`);
+      Logger.info('CasparClipUI', 'Unmount', `Component unmounting for item ${item.id}`);
       unsubscribe();
     };
   }, [item.id, handleEvent]);
 
   // Manejar clic en botón play/pause
   const handlePlayPause = useCallback(() => {
-    Logger.info('CasparMClipUI', 'UserAction', `Play/Pause clicked for item ${item.id}`);
+    Logger.info('CasparClipUI', 'UserAction', `Play/Pause clicked for item ${item.id}`);
     
     const event: MItemEvent = {
       itemId: item.id,
-      type: 'casparMClip',
+      type: 'casparClip',
       action: playbackState.isPlaying ? 'STOP' : 'PLAY',
       state: playbackState
     };
 
-    Logger.debug('CasparMClipUI', 'EmitEvent', `Emitting ${event.action} event`, event);
+    Logger.debug('CasparClipUI', 'EmitEvent', `Emitting ${event.action} event`, event);
     EventBus.emit(event);
 
     onToggle?.();
@@ -105,14 +101,14 @@ export default function CasparMClip({
 
   return (
     <div className="flex-none flex h-8 w-[210px] [&>*:first-child]:mr-[1px]">
-      {item.munion && (
+      {item.union && (
         <MItemUnion
           key={`union-${uniqueKey || item.id}`}
           itemId={item.id}
-          union={item.munion}
+          union={item.union}
           isActive={isActive}
           onUnionUpdate={handleUnionUpdate}
-          itemType="casparMClip"
+          itemType="casparClip"
         />
       )}
 
@@ -137,7 +133,7 @@ export default function CasparMClip({
         </button>
 
         <span className="text-sm whitespace-nowrap overflow-hidden overflow-ellipsis pr-3">
-          {item.title}
+          {item.name}
         </span>
       </div>
     </div>

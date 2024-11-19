@@ -4,11 +4,12 @@ import React, { useState, useCallback } from 'react';
 import { Play, Square } from 'lucide-react';
 import { MEvent, MEventUnion } from '@/lib/types/event';
 import { MEventUnionComponent } from './MEventUnion';
-import CasparMClip from '../items/CasparMClip';
+import { CasparClip } from '../../items/CasparClip';
+import { CasparClip as CasparClipType } from '@/lib/types/item';
 
 interface MEventProps {
   event: MEvent;
-  onEventChange: (eventId: number, changes: Partial<MEvent>) => void;
+  onEventChange: (eventId: number, updatedEvent: MEvent) => void;
   availableUnions: MEventUnion[];
 }
 
@@ -26,13 +27,13 @@ export default function MEventComponent({
   }, []);
 
   const itemsByRow = React.useMemo(() => {
-    const rows: Record<number, typeof event.items> = {};
+    const rows: Record<number, CasparClipType[]> = {};
     if (Array.isArray(event.items)) {
       event.items.forEach(item => {
-        if (!rows[item.position_row]) {
-          rows[item.position_row] = [];
+        if (!rows[item.position.row]) {
+          rows[item.position.row] = [];
         }
-        rows[item.position_row].push(item);
+        rows[item.position.row].push(item as CasparClipType);
       });
     }
     return rows;
@@ -52,9 +53,9 @@ export default function MEventComponent({
     }));
   };
 
-  const renderEmptySlots = (rowNumber: number, rowItems: typeof event.items = []) => {
+  const renderEmptySlots = (rowNumber: number, rowItems: CasparClipType[] = []) => {
     const slots = [];
-    const existingPositions = new Set(rowItems.map(item => item.position_column));
+    const existingPositions = new Set(rowItems.map(item => item.position.column));
     
     for (let i = 1; i <= 8; i++) {
       if (!existingPositions.has(i)) {
@@ -114,14 +115,10 @@ export default function MEventComponent({
 
                   <div className="flex gap-2.5 overflow-x-auto pb-2 [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-thumb]:w-1/4 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-gray-500/50 [&::-webkit-scrollbar-track]:bg-gray-800/30">
                     {items.map((item) => (
-                      <CasparMClip
+                      <CasparClip
                         key={`clip-${generateUniqueKey()}`}
                         uniqueKey={generateUniqueKey()}
-                        item={{
-                          id: item.id,
-                          title: `Item ${item.id}`,
-                          munion: item.munion
-                        }}
+                        item={item}
                         isActive={isRowActive}
                       />
                     ))}

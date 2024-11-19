@@ -26,27 +26,108 @@ CREATE TABLE IF NOT EXISTS mevents (
   FOREIGN KEY (event_union_id) REFERENCES mevent_unions(id)
 );
 
--- MItem Unions table
-CREATE TABLE IF NOT EXISTS mitem_unions (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  description TEXT,
-  icon TEXT NOT NULL,
-  compatible_items TEXT NOT NULL,
-  position INTEGER DEFAULT 0,
-  delay REAL DEFAULT 0.0
-);
-
--- MItems table
-CREATE TABLE IF NOT EXISTS mitems (
+-- Base position tracking for all items
+CREATE TABLE IF NOT EXISTS item_positions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   event_id INTEGER NOT NULL,
-  type TEXT NOT NULL,
+  item_type TEXT NOT NULL,
+  item_id INTEGER NOT NULL,
   position_row INTEGER NOT NULL,
   position_column INTEGER NOT NULL,
-  mitem_union_id INTEGER NOT NULL,
-  FOREIGN KEY (event_id) REFERENCES mevents(id) ON DELETE CASCADE,
-  FOREIGN KEY (mitem_union_id) REFERENCES mitem_unions(id)
+  FOREIGN KEY (event_id) REFERENCES mevents(id) ON DELETE CASCADE
+);
+
+-- CasparCG Clips
+CREATE TABLE IF NOT EXISTS caspar_clips (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  file_path TEXT NOT NULL,
+  channel INTEGER,
+  layer INTEGER,
+  loop BOOLEAN DEFAULT FALSE,
+  auto_start BOOLEAN DEFAULT FALSE,
+  transition_type TEXT,
+  transition_duration INTEGER,
+  FOREIGN KEY (event_id) REFERENCES mevents(id) ON DELETE CASCADE
+);
+
+-- CasparCG Cameras
+CREATE TABLE IF NOT EXISTS caspar_cameras (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  device_id TEXT NOT NULL,
+  channel INTEGER,
+  layer INTEGER,
+  preview_enabled BOOLEAN DEFAULT FALSE,
+  FOREIGN KEY (event_id) REFERENCES mevents(id) ON DELETE CASCADE
+);
+
+-- CasparCG Graphics
+CREATE TABLE IF NOT EXISTS caspar_graphics (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  file_path TEXT NOT NULL,
+  channel INTEGER,
+  layer INTEGER,
+  template_data TEXT,
+  FOREIGN KEY (event_id) REFERENCES mevents(id) ON DELETE CASCADE
+);
+
+-- CasparCG Microphones
+CREATE TABLE IF NOT EXISTS caspar_microphones (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  device_id TEXT NOT NULL,
+  channel INTEGER,
+  layer INTEGER,
+  volume REAL DEFAULT 1.0,
+  FOREIGN KEY (event_id) REFERENCES mevents(id) ON DELETE CASCADE
+);
+
+-- OBS Clips
+CREATE TABLE IF NOT EXISTS obs_clips (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  scene_name TEXT NOT NULL,
+  source_name TEXT NOT NULL,
+  FOREIGN KEY (event_id) REFERENCES mevents(id) ON DELETE CASCADE
+);
+
+-- OBS Cameras
+CREATE TABLE IF NOT EXISTS obs_cameras (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  device_id TEXT NOT NULL,
+  scene_name TEXT NOT NULL,
+  filters TEXT,
+  FOREIGN KEY (event_id) REFERENCES mevents(id) ON DELETE CASCADE
+);
+
+-- OBS Graphics
+CREATE TABLE IF NOT EXISTS obs_graphics (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  scene_name TEXT NOT NULL,
+  source_name TEXT NOT NULL,
+  FOREIGN KEY (event_id) REFERENCES mevents(id) ON DELETE CASCADE
+);
+
+-- OBS Microphones
+CREATE TABLE IF NOT EXISTS obs_microphones (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  device_id TEXT NOT NULL,
+  scene_name TEXT NOT NULL,
+  volume REAL DEFAULT 1.0,
+  FOREIGN KEY (event_id) REFERENCES mevents(id) ON DELETE CASCADE
 );
 
 -- CasparCG Servers table
@@ -92,29 +173,23 @@ CREATE TABLE IF NOT EXISTS caspar_layers (
   FOREIGN KEY (channel_id) REFERENCES caspar_channels(id) ON DELETE CASCADE
 );
 
--- Caspar Clips table
-CREATE TABLE IF NOT EXISTS caspar_clips (
+-- MItem Unions table
+CREATE TABLE IF NOT EXISTS mitem_unions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  item_id INTEGER NOT NULL,
   name TEXT NOT NULL,
-  file_path TEXT NOT NULL,
-  channel INTEGER NOT NULL,
-  layer INTEGER NOT NULL,
-  loop BOOLEAN DEFAULT false,
-  transition_type TEXT,
-  transition_duration INTEGER,
-  auto_start BOOLEAN DEFAULT false,
-  FOREIGN KEY (item_id) REFERENCES mitems(id) ON DELETE CASCADE
+  description TEXT,
+  icon TEXT NOT NULL,
+  compatible_items TEXT NOT NULL,
+  position INTEGER DEFAULT 0,
+  delay REAL DEFAULT 0.0
 );
 
 -- Indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_mevents_project_id ON mevents(project_id);
 CREATE INDEX IF NOT EXISTS idx_mevents_event_union_id ON mevents(event_union_id);
-CREATE INDEX IF NOT EXISTS idx_mitems_event_id ON mitems(event_id);
-CREATE INDEX IF NOT EXISTS idx_mitems_union_id ON mitems(mitem_union_id);
+CREATE INDEX IF NOT EXISTS idx_item_positions_event_id ON item_positions(event_id);
 CREATE INDEX IF NOT EXISTS idx_caspar_channels_server ON caspar_channels(server_id);
 CREATE INDEX IF NOT EXISTS idx_caspar_layers_channel ON caspar_layers(channel_id);
-CREATE INDEX IF NOT EXISTS idx_caspar_clips_item ON caspar_clips(item_id);
 
 -- Triggers for updated_at
 CREATE TRIGGER IF NOT EXISTS update_projects_timestamp 

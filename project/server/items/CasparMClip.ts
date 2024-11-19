@@ -1,14 +1,21 @@
-import { MItem, MItemType } from '@/lib/types/item';
-import { CasparMClipConfig } from '@/lib/types/item';
+import { CasparClip } from '@/lib/types/item';
 import EventBus, { MItemEvent, PlaybackState } from '@/lib/events/EventBus';
 import Logger from '@/lib/utils/logger';
 import { CasparServer } from '@/server/device/caspar/CasparServer';
+import { CasparClipRepository } from '@/lib/repositories/CasparClipRepository';
 
-export class CasparMClip implements MItem {
-  id: number;
-  type: MItemType = 'casparMClip';
-  position_row: number;
-  position_column: number;
+export class CasparClipImpl implements CasparClip {
+  readonly id: number;
+  readonly type = 'casparClip' as const;
+  readonly eventId: number;
+  readonly name: string;
+  readonly filePath: string;
+  readonly channel: number;
+  readonly layer: number;
+  readonly loop: boolean;
+  readonly autoStart: boolean;
+  readonly position: { row: number; column: number };
+  readonly transition?: { type: string; duration: number };
   
   private state: PlaybackState = {
     isPlaying: false,
@@ -16,32 +23,31 @@ export class CasparMClip implements MItem {
     duration: 0
   };
   
-  private config: CasparMClipConfig;
   private server: CasparServer;
+  private repository: CasparClipRepository;
 
-  constructor(config: CasparMClipConfig) {
-    this.id = config.id;
-    this.position_row = config.position_row;
-    this.position_column = config.position_column;
+  constructor(
+    clip: CasparClip,
+    server: CasparServer,
+    repository: CasparClipRepository
+  ) {
+    this.id = clip.id;
+    this.eventId = clip.eventId;
+    this.name = clip.name;
+    this.filePath = clip.filePath;
+    this.channel = clip.channel;
+    this.layer = clip.layer;
+    this.loop = clip.loop;
+    this.autoStart = clip.autoStart;
+    this.position = clip.position;
+    this.transition = clip.transition;
+
+    this.server = server;
+    this.repository = repository;
     
-    this.config = {
-      id: config.id,
-      name: config.name,
-      file_path: config.file_path,
-      channel: config.channel || 1,
-      layer: config.layer || 10,
-      loop: config.loop || false,
-      transition_type: config.transition_type || 'cut',
-      transition_duration: config.transition_duration || 0,
-      auto_start: config.auto_start || false
-    };
-
-    Logger.info('CasparMClip', 'Initialize', `Clip initialized with ID: ${this.id}`, {
-      clipPath: this.config.file_path
+    Logger.info('CasparClip', 'Initialize', `Clip initialized with ID: ${this.id}`, {
+      clipPath: this.filePath
     });
-
-    // Obtener instancia del servidor CasparCG
-    this.server = CasparServer.getInstance();
     
     // Suscribirse a eventos
     EventBus.subscribe(this.handleEvent.bind(this));
@@ -51,11 +57,11 @@ export class CasparMClip implements MItem {
     // Solo procesar eventos para este clip
     if (event.itemId !== this.id) return;
 
-    Logger.debug('CasparMClip', 'HandleEvent', `Processing ${event.action} event for clip ${this.id}`, event);
+    Logger.debug('CasparClip', 'HandleEvent', `Processing ${event.action} event for clip ${this.id}`, event);
 
     switch (event.action) {
       case 'PLAY':
-        this.play();
+        this.execute();
         break;
       case 'STOP':
         this.stop();
@@ -66,35 +72,32 @@ export class CasparMClip implements MItem {
   private emitEvent(action: MItemEvent['action'], error?: string) {
     const event: MItemEvent = {
       itemId: this.id,
-      type: 'casparMClip',
+      type: 'casparClip',
       action,
       state: this.state,
       error
     };
     
-    Logger.debug('CasparMClip', 'EmitEvent', `Emitting ${action} event for clip ${this.id}`, event);
+    Logger.debug('CasparClip', 'EmitEvent', `Emitting ${action} event for clip ${this.id}`, event);
     EventBus.emit(event);
   }
 
-  async play() {
+  async execute() {
     try {
-      Logger.info('CasparMClip', 'Play', `Starting playback for clip ${this.id}`);
+      Logger.info('CasparClip', 'Execute', `Starting playback for clip ${this.id}`);
       
       // Verificar que el archivo existe
-      if (!this.config.file_path) {
+      if (!this.filePath) {
         throw new Error('No file path specified');
       }
 
       // Intentar reproducir
       await this.server.play({
-        channel: this.config.channel,
-        layer: this.config.layer,
-        file: this.config.file_path,
-        loop: this.config.loop,
-        transition: {
-          type: this.config.transition_type,
-          duration: this.config.transition_duration
-        }
+        channel: this.channel,
+        layer: this.layer,
+        file: this.filePath,
+        loop: this.loop,
+        transition: this.transition
       });
 
       // Actualizar estado
@@ -104,12 +107,12 @@ export class CasparMClip implements MItem {
         error: undefined
       };
       
-      Logger.info('CasparMClip', 'Play', `Playback started successfully for clip ${this.id}`);
+      Logger.info('CasparClip', 'Execute', `Playback started successfully for clip ${this.id}`);
       this.emitEvent('STATE_CHANGE');
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error during playback';
-      Logger.error('CasparMClip', 'Play', errorMessage, error);
+      Logger.error('CasparClip', 'Execute', errorMessage, error);
       
       // Actualizar estado con error
       this.state = {
@@ -125,19 +128,16 @@ export class CasparMClip implements MItem {
 
   async stop() {
     try {
-      Logger.info('CasparMClip', 'Stop', `Stopping playback for clip ${this.id}`);
+      Logger.info('CasparClip', 'Stop', `Stopping playback for clip ${this.id}`);
 
       // Solo intentar detener si está reproduciendo
       if (!this.state.isPlaying) {
-        Logger.info('CasparMClip', 'Stop', `Clip ${this.id} is not playing`);
+        Logger.info('CasparClip', 'Stop', `Clip ${this.id} is not playing`);
         return;
       }
 
       // Intentar detener
-      await this.server.stop(
-        this.config.channel,
-        this.config.layer
-      );
+      await this.server.stop(this.channel, this.layer);
 
       // Actualizar estado
       this.state = {
@@ -146,12 +146,12 @@ export class CasparMClip implements MItem {
         error: undefined
       };
       
-      Logger.info('CasparMClip', 'Stop', `Playback stopped successfully for clip ${this.id}`);
+      Logger.info('CasparClip', 'Stop', `Playback stopped successfully for clip ${this.id}`);
       this.emitEvent('STATE_CHANGE');
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error during stop';
-      Logger.error('CasparMClip', 'Stop', errorMessage, error);
+      Logger.error('CasparClip', 'Stop', errorMessage, error);
       
       // Actualizar estado con error
       this.state = {
