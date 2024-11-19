@@ -22,11 +22,11 @@ export class CasparServer extends DeviceManager {
     const connectionOptions: ConnectionOptions = {
       host: this.config.host,
       port: this.config.port,
-      timeout: this.config.connection_timeout || 5000
+      timeout: this.config.connection_timeout || 10000
     };
 
     this.connectionManager = new ConnectionManager(connectionOptions, this.logger);
-    this.commandManager = new CommandManager(this.logger, this.config.connection_timeout);
+    this.commandManager = new CommandManager(this.logger, this.config.connection_timeout || 10000);
     this.stateManager = new StateManager(this.logger);
 
     this.setupEventListeners();
@@ -54,7 +54,7 @@ export class CasparServer extends DeviceManager {
     const connectionOptions: ConnectionOptions = {
       host: this.config.host,
       port: this.config.port,
-      timeout: this.config.connection_timeout || 5000
+      timeout: this.config.connection_timeout || 10000
     };
     
     this.connectionManager.updateOptions(connectionOptions);
@@ -81,14 +81,14 @@ export class CasparServer extends DeviceManager {
         return false;
       }
 
-      this.logger.info(`🔌 Intentando conectar a ${this.config.host}:${this.config.port}`);
-      
-      // Si ya está conectado, desconectar primero
+      // Si ya está conectado, no hacer nada
       if (this.connected) {
-        this.logger.info('⚠️ Ya conectado, desconectando primero...');
-        await this.disconnect();
+        this.logger.info('✅ Ya conectado al servidor');
+        return true;
       }
 
+      this.logger.info(`🔌 Intentando conectar a ${this.config.host}:${this.config.port}`);
+      
       // Intentar conectar
       this.connected = await this.connectionManager.connect();
       
@@ -109,7 +109,7 @@ export class CasparServer extends DeviceManager {
           return true;
         } catch (error) {
           this.logger.error('❌ Error al inicializar estado del servidor:', error);
-          await this.disconnect();
+          // No desconectamos aquí, solo reportamos el error
           return false;
         }
       } else {

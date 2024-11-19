@@ -90,11 +90,34 @@ export class CommandManager extends EventEmitter {
   private handleResponseLine(line: string): void {
     this.logger.debug(` Respuesta recibida: ${line}`);
 
+    // Manejar respuesta de VERSION específicamente
+    if (line.startsWith('201 VERSION')) {
+      const response: AMCPResponse = {
+        code: 201,
+        status: 'OK',
+        data: line.substring(4).trim()
+      };
+      this.handleSuccessResponse(response);
+      return;
+    }
+
     // Parsear la respuesta según el protocolo AMCP
     const match = line.match(/^(\d{3})\s+((?:OK|ERROR|FAILED)(?:\s+(.+))?)/i);
     
     if (!match) {
-      this.logger.debug(` Línea no reconocida: ${line}`);
+      // Acumular datos adicionales para el comando actual
+      const [commandId] = this.findOldestPendingCommand();
+      if (commandId && line.trim()) {
+        const pending = this.pendingCommands.get(commandId);
+        if (pending) {
+          const response: AMCPResponse = {
+            code: 200,
+            status: 'OK',
+            data: line.trim()
+          };
+          this.handleSuccessResponse(response);
+        }
+      }
       return;
     }
 

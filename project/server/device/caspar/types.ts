@@ -29,6 +29,7 @@ export interface ConnectionState {
   lastError?: Error;
   lastConnection?: Date;
   reconnectAttempts: number;
+  lastActivity: number;
 }
 
 export interface CasparServerConfig extends DeviceConfig {
