@@ -5,7 +5,7 @@ import { MainLayoutState, MenuSection } from '@/lib/types/layout';
 import { Project } from '@/lib/types/project';
 import { DeviceConfig } from '@/lib/types/device';
 import EventBus from '@/lib/events/EventBus';
-import CasparServer from '@/lib/caspar/CasparServer';
+import CasparServer from '@/server/device/caspar/CasparServer';
 
 const defaultInitialState: MainLayoutState = {
   currentProject: null,
