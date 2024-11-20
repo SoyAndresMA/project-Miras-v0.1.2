@@ -122,6 +122,19 @@ class ProjectItemInitializer {
   public getClip(id: number): CasparClip | undefined {
     return this.clips.get(id);
   }
+
+  public async getProjects(): Promise<any[]> {
+    if (!this.db) {
+      await this.initialize();
+    }
+    try {
+      const projects = await this.db.all('SELECT * FROM projects ORDER BY created_at DESC');
+      return projects;
+    } catch (error) {
+      Logger.getInstance().error('ProjectItemInitializer', 'getProjects', 'Error fetching projects:', error);
+      throw error;
+    }
+  }
 }
 
 export { ProjectItemInitializer };

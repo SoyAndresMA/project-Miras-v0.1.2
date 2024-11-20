@@ -89,4 +89,6 @@ const config: Config = {
     require('tailwindcss-animate'),
     require('tailwind-scrollbar')({ nocompatible: true }),
   ],
-};
+} satisfies Config;
+
+export default config;

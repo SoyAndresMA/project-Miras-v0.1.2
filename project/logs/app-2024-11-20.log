@@ -3338,3 +3338,50 @@ Metadata: {
   "id": 1
 }
 [2024-11-20T01:06:09.116Z] DEBUG [[object Object]]: Executing query
+[2024-11-20T01:44:44.768Z] DEBUG [ItemUnionRepository]: Finding all servers
+[2024-11-20T01:44:44.769Z] DEBUG [[object Object]]: Executing query
+[2024-11-20T01:44:44.769Z] INFO [DatabaseService]: Initializing database connection
+Metadata: {
+  "dbPath": "C:\\Users\\ANDRES\\Downloads\\project-bolt-github-buacz8\\project\\db\\database.sqlite"
+}
+[2024-11-20T01:44:45.275Z] DEBUG [ItemUnionRepository]: Fetching item union by ID
+Metadata: {
+  "id": 1
+}
+[2024-11-20T01:44:45.276Z] DEBUG [[object Object]]: Executing query
+[2024-11-20T01:44:45.972Z] DEBUG [ItemUnionRepository]: Finding all servers
+[2024-11-20T01:44:45.973Z] DEBUG [[object Object]]: Executing query
+[2024-11-20T01:44:45.973Z] INFO [DatabaseService]: Initializing database connection
+Metadata: {
+  "dbPath": "C:\\Users\\ANDRES\\Downloads\\project-bolt-github-buacz8\\project\\db\\database.sqlite"
+}
+[2024-11-20T01:44:46.044Z] DEBUG [ItemUnionRepository]: Fetching item union by ID
+Metadata: {
+  "id": 1
+}
+[2024-11-20T01:44:46.044Z] DEBUG [[object Object]]: Executing query
+[2024-11-20T01:44:54.690Z] DEBUG [ItemUnionRepository]: Finding all servers
+[2024-11-20T01:44:54.690Z] DEBUG [[object Object]]: Executing query
+[2024-11-20T01:44:54.699Z] DEBUG [ItemUnionRepository]: Fetching item union by ID
+Metadata: {
+  "id": 1
+}
+[2024-11-20T01:44:54.699Z] DEBUG [[object Object]]: Executing query
+[2024-11-20T01:45:54.520Z] DEBUG [ItemUnionRepository]: Finding all servers
+[2024-11-20T01:45:54.520Z] DEBUG [[object Object]]: Executing query
+[2024-11-20T01:45:54.536Z] DEBUG [ItemUnionRepository]: Fetching item union by ID
+Metadata: {
+  "id": 1
+}
+[2024-11-20T01:45:54.536Z] DEBUG [[object Object]]: Executing query
+[2024-11-20T01:46:07.015Z] DEBUG [ItemUnionRepository]: Finding all servers
+[2024-11-20T01:46:07.015Z] DEBUG [[object Object]]: Executing query
+[2024-11-20T01:46:07.016Z] INFO [DatabaseService]: Initializing database connection
+Metadata: {
+  "dbPath": "C:\\Users\\ANDRES\\Downloads\\project-bolt-github-buacz8\\project\\db\\database.sqlite"
+}
+[2024-11-20T01:46:07.155Z] DEBUG [ItemUnionRepository]: Fetching item union by ID
+Metadata: {
+  "id": 1
+}
+[2024-11-20T01:46:07.156Z] DEBUG [[object Object]]: Executing query

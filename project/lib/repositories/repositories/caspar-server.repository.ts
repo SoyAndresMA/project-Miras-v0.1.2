@@ -1,58 +1,54 @@
-import { BaseRepository } from './base.repository';
+'use server';
+
+import { DatabaseService } from '@/server/services/database.service';
 import { DeviceConfig } from '@/lib/types/device';
+import { LoggerService } from '@/lib/services/logger.service';
+import { ServerState } from '@/lib/types/server';
 
-interface ServerState {
-  connected: boolean;
-  lastError?: string | null;
-  lastConnectionAttempt?: Date;
-  lastSuccessfulConnection?: Date;
-  lastErrorTime?: Date;
-}
+export class CasparServerRepository {
+  private logger = LoggerService.getInstance();
+  private db: DatabaseService;
 
-export class CasparServerRepository extends BaseRepository<DeviceConfig> {
-  private static instance: CasparServerRepository;
-
-  private constructor() {
-    super('CasparServerRepository');
+  constructor() {
+    this.db = DatabaseService.getInstance();
   }
 
-  public static getInstance(): CasparServerRepository {
-    if (!CasparServerRepository.instance) {
-      CasparServerRepository.instance = new CasparServerRepository();
-    }
-    return CasparServerRepository.instance;
+  async findAll(): Promise<DeviceConfig[]> {
+    this.logger.debug('Finding all servers');
+    return this.db.query<DeviceConfig>('SELECT * FROM casparcg_servers ORDER BY name');
   }
 
   async findById(id: number): Promise<DeviceConfig | null> {
     this.logger.debug('Finding server by ID', { id });
-    const servers = await this.query<DeviceConfig>(
+    const servers = await this.db.query<DeviceConfig>(
       'SELECT * FROM casparcg_servers WHERE id = ?',
       [id]
     );
     return servers[0] || null;
   }
 
-  async findAll(): Promise<DeviceConfig[]> {
-    this.logger.debug('Finding all servers');
-    return this.query<DeviceConfig>(
-      'SELECT * FROM casparcg_servers ORDER BY name'
-    );
-  }
-
   async create(data: Omit<DeviceConfig, 'id'>): Promise<DeviceConfig> {
     this.logger.info('Creating new server', { data });
-    return this.transaction(async (db) => {
-      const { lastID } = await db.run(
+    return this.db.transaction(async (db) => {
+      const result = await db.run(
         `INSERT INTO casparcg_servers (
-          name, host, port, description,
-          username, password, preview_channel,
-          locked_channel, is_shadow, enabled,
-          command_timeout
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          name, host, port, channel_formats, version,
+          connected, last_error, last_connection_attempt,
+          last_successful_connection, last_error_time,
+          description, username, password, preview_channel,
+          locked_channel, is_shadow, enabled, command_timeout
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           data.name,
           data.host,
           data.port,
+          data.channel_formats,
+          data.version,
+          data.connected ? 1 : 0,
+          data.last_error,
+          data.last_connection_attempt?.toISOString(),
+          data.last_successful_connection?.toISOString(),
+          data.last_error_time?.toISOString(),
           data.description || null,
           data.username || null,
           data.password || null,
@@ -64,9 +60,9 @@ export class CasparServerRepository extends BaseRepository<DeviceConfig> {
         ]
       );
 
-      const server = await this.findById(lastID);
+      const server = await this.findById(result.lastID!);
       if (!server) {
-        throw new Error('Failed to create server');
+        throw new Error('Server not found after creation');
       }
       return server;
     });
@@ -74,7 +70,7 @@ export class CasparServerRepository extends BaseRepository<DeviceConfig> {
 
   async update(id: number, data: Partial<DeviceConfig>): Promise<DeviceConfig> {
     this.logger.info('Updating server', { id, data });
-    return this.transaction(async (db) => {
+    return this.db.transaction(async (db) => {
       const setClauses: string[] = [];
       const values: any[] = [];
 
@@ -103,34 +99,31 @@ export class CasparServerRepository extends BaseRepository<DeviceConfig> {
     });
   }
 
-  async delete(id: number): Promise<void> {
+  async delete(id: string): Promise<void> {
     this.logger.info('Deleting server', { id });
-    await this.execute(
-      'DELETE FROM casparcg_servers WHERE id = ?',
-      [id]
-    );
+    await this.db.execute('DELETE FROM casparcg_servers WHERE id = ?', [id]);
   }
 
   async updateServerState(serverId: string, state: ServerState): Promise<void> {
-    return this.transaction(async (db) => {
-      await db.run(`
-        UPDATE casparcg_servers
-        SET 
-          connected = ?,
-          last_error = ?,
-          last_connection_attempt = ?,
-          last_successful_connection = ?,
-          last_error_time = ?
-        WHERE id = ?
-      `, [
+    this.logger.info('Updating server state', { serverId, state });
+    await this.db.execute(
+      `UPDATE casparcg_servers
+       SET 
+         connected = ?,
+         last_error = ?,
+         last_connection_attempt = ?,
+         last_successful_connection = ?,
+         last_error_time = ?
+       WHERE id = ?`,
+      [
         state.connected ? 1 : 0,
         state.lastError,
         state.lastConnectionAttempt?.toISOString(),
         state.lastSuccessfulConnection?.toISOString(),
         state.lastErrorTime?.toISOString(),
         serverId
-      ]);
-    });
+      ]
+    );
   }
 
   private mapToDeviceConfig(row: any): DeviceConfig {
@@ -139,6 +132,8 @@ export class CasparServerRepository extends BaseRepository<DeviceConfig> {
       name: row.name,
       host: row.host,
       port: row.port,
+      channel_formats: row.channel_formats,
+      version: row.version,
       description: row.description,
       username: row.username,
       password: row.password,

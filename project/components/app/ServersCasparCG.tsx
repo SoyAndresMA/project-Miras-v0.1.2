@@ -1,5 +1,7 @@
+'use client';
+
 import React, { useState, useEffect } from 'react';
-import { DeviceConfig } from '@/types/device';
+import { DeviceConfig } from '@/lib/types/device';
 import { useToast } from '@/components/ui/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table';
@@ -9,14 +11,49 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { Switch } from '@/components/ui/switch';
-import { useServerState } from '@/hooks/useServerState';
+import { useServerState } from '@/components/providers/ServerStateProvider';
+import { useOptimistic } from 'react';
+import { 
+  getServers,
+  updateServer,
+  testServerConnection,
+  createServer,
+  deleteServer
+} from '@/app/actions/server-actions';
 
 export function ServersCasparCG() {
   const serverState = useServerState();
   const [isLoading, setIsLoading] = useState(false);
+  const [isPending, startTransition] = useTransition();
   const [isTesting, setIsTesting] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<string>("");
   const { toast } = useToast();
+
+  const [optimisticServers, updateOptimisticServers] = useOptimistic(
+    serverState.servers,
+    (state: DeviceConfig[], updatedServer: DeviceConfig) => 
+      state.map(s => s.id === updatedServer.id ? updatedServer : s)
+  );
+
+  useEffect(() => {
+    loadServers();
+  }, []);
+
+  const loadServers = async () => {
+    try {
+      setIsLoading(true);
+      const loadedServers = await getServers();
+      serverState.setServers(loadedServers);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to load servers",
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Función para probar la conexión con un servidor
   const testServerConnection = async (server: DeviceConfig) => {
@@ -126,110 +163,22 @@ export function ServersCasparCG() {
     }
   };
 
-  // Cargar servidores y su estado inicial
-  const loadServers = async () => {
-    try {
-      console.log('🔄 Iniciando carga de servidores...');
-      setIsLoading(true);
-      const response = await fetch('/api/casparcg/servers');
-      if (!response.ok) throw new Error('Failed to fetch servers');
-      const data = await response.json();
-      console.log('📋 Servidores encontrados:', data.length);
-      
-      // Cargar el estado de conexión para cada servidor
-      console.log('🔍 Verificando estado de conexión de cada servidor...');
-      const serversWithState = await Promise.all(
-        data.map(async (server: DeviceConfig) => {
-          console.log(`⚡ Comprobando servidor ${server.name} (ID: ${server.id})...`);
-          try {
-            const stateResponse = await fetch(`/api/casparcg/servers/${server.id}/state`);
-            if (stateResponse.ok) {
-              const stateData = await stateResponse.json();
-              console.log(`✅ Estado del servidor ${server.name}: ${stateData.connected ? 'Conectado' : 'Desconectado'}`);
-              return { ...server, connected: stateData.connected };
-            }
-          } catch (error) {
-            console.error(`❌ Error al verificar estado del servidor ${server.id}:`, error);
-          }
-          return server;
-        })
-      );
-
-      serverState.setServers(serversWithState);
-      console.log('✨ Carga de servidores completada');
-    } catch (error) {
-      console.error('❌ Error loading servers:', error);
-      toast({
-        title: "Error",
-        description: "Failed to load servers",
-        variant: "destructive"
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Efecto para cargar servidores al montar el componente
-  useEffect(() => {
-    loadServers();
-  }, []);
-
-  // Efecto para mantener la conexión activa
-  useEffect(() => {
-    const checkConnections = async () => {
-      const connectedServers = serverState.servers.filter(s => s.connected && s.enabled);
-      for (const server of connectedServers) {
-        try {
-          const response = await fetch(`/api/casparcg/servers/${server.id}/state`, {
-            signal: AbortSignal.timeout(5000) // 5 second timeout
-          });
-          
-          if (!response.ok) {
-            console.log(`Lost connection to ${server.name}, attempting to reconnect...`);
-            await handleConnectServer(server);
-          }
-        } catch (error) {
-          if (error instanceof Error) {
-            if (error.name === 'TimeoutError') {
-              console.error(`Connection check timeout for server ${server.name}`);
-            } else {
-              console.error(`Error checking connection for server ${server.id}:`, error);
-            }
-          }
-          // Log connection failure
-          await logConnectionEvent(server.id, false, error instanceof Error ? error.message : 'Connection check failed');
-        }
-      }
-    };
-
-    // Verificar conexiones cada 30 segundos
-    const interval = setInterval(checkConnections, 30000);
-    return () => clearInterval(interval);
-  }, [serverState.servers]);
-
-  const handleNew = () => {
-    serverState.setSelectedServer({
-      id: 0,
-      name: '',
-      host: 'localhost',
-      port: 5250,
-      description: '',
-      username: '',
-      password: '',
-      preview_channel: 2,
-      locked_channel: 1,
-      is_shadow: false,
-      enabled: true,
-      connected: false,
-      version: '',
-      channel_formats: ''
-    });
-  };
-
-  const handleUpdateServer = (field: string, value: any) => {
+  const handleUpdateServer = async (field: string, value: any) => {
     if (serverState.selectedServer) {
       const updatedServer = { ...serverState.selectedServer, [field]: value };
-      serverState.setSelectedServer(updatedServer);
+      startTransition(async () => {
+        try {
+          updateOptimisticServers(updatedServer);
+          await updateServer(updatedServer);
+          await loadServers(); // Recargar para asegurar sincronización
+        } catch (error) {
+          toast({
+            title: "Error",
+            description: "Failed to update server",
+            variant: "destructive"
+          });
+        }
+      });
     }
   };
 
@@ -323,12 +272,12 @@ export function ServersCasparCG() {
       setIsTesting(true);
       setConnectionStatus("Starting connection test...");
       
-      const updatedServer = await testServerConnection(serverState.selectedServer);
+      const connected = await testServerConnection(serverState.selectedServer);
       
-      serverState.setSelectedServer(updatedServer);
-      
+      serverState.setSelectedServer(connected);
+
       // Actualizar el servidor en la lista
-      serverState.updateServer(updatedServer);
+      serverState.updateServer(connected);
 
       toast({
         title: "Connection Successful",
@@ -352,6 +301,25 @@ export function ServersCasparCG() {
     }
   };
 
+  const handleNew = () => {
+    serverState.setSelectedServer({
+      id: 0,
+      name: '',
+      host: 'localhost',
+      port: 5250,
+      description: '',
+      username: '',
+      password: '',
+      preview_channel: 2,
+      locked_channel: 1,
+      is_shadow: false,
+      enabled: true,
+      connected: false,
+      version: '',
+      channel_formats: ''
+    });
+  };
+
   return (
     <div className="grid grid-cols-[350px,1fr] gap-6 h-[600px]">
       {/* Lista de servidores */}
@@ -365,7 +333,7 @@ export function ServersCasparCG() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {serverState.servers.map((server) => (
+            {optimisticServers.map((server) => (
               <TableRow 
                 key={server.id}
                 className={cn(

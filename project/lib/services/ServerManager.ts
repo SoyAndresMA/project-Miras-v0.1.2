@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events';
 import { CasparServer } from '@/server/device/caspar/CasparServer';
 import { DeviceConfig } from '@/lib/types/device';
-import { CasparServerRepository } from '@/app/api/repositories/caspar-server.repository';
+import { CasparServerRepository } from '@/lib/repositories/caspar-server.repository';
 
 interface ServerState {
   connected: boolean;

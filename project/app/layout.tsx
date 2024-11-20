@@ -2,6 +2,7 @@ import './globals.css';
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import { MainLayout } from '@/components/layouts/MainLayout';
+import { ServerStateProvider } from '@/components/providers/ServerStateProvider';
 import { initializeServer } from './actions/server';
 
 const inter = Inter({ subsets: ['latin'] });
@@ -21,9 +22,11 @@ export default async function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        <MainLayout serverState={serverState}>
-          {children}
-        </MainLayout>
+        <ServerStateProvider initialState={serverState}>
+          <MainLayout>
+            {children}
+          </MainLayout>
+        </ServerStateProvider>
       </body>
     </html>
   );

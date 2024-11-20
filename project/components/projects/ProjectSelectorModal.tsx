@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Loader2 } from "lucide-react";
 import { Project } from "@/lib/types/project";
 import { cn } from "@/lib/utils";
-import { getProjects } from "@/app/actions/server";
+import { getProjects } from "@/app/actions/project-actions";
 
 interface ProjectSelectorModalProps {
   isOpen: boolean;

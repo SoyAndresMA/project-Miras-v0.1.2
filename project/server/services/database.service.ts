@@ -1,5 +1,5 @@
-import sqlite3 from 'sqlite3';
-import { open } from 'sqlite';
+'use server';
+
 import { join } from 'path';
 import { LoggerService } from '@/lib/services/logger.service';
 
@@ -8,14 +8,22 @@ interface QueryCacheEntry {
   data: any;
 }
 
+let sqlite3: any;
+let sqlite: any;
+
+if (typeof window === 'undefined') {
+  sqlite3 = require('sqlite3');
+  sqlite = require('sqlite');
+}
+
 export class DatabaseService {
   private static instance: DatabaseService;
-  private db: sqlite3.Database | null = null;
+  private db: any = null;
   private queryCache: Map<string, QueryCacheEntry> = new Map();
   private readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutos
   private readonly MAX_CACHE_SIZE = 100;
   private readonly logger = LoggerService.getInstance();
-  private connectionPromise: Promise<sqlite3.Database> | null = null;
+  private connectionPromise: Promise<any> | null = null;
   private readonly CONTEXT = 'DatabaseService';
 
   private constructor() {}
@@ -27,18 +35,25 @@ export class DatabaseService {
     return this.instance;
   }
 
-  private async initializeDb(): Promise<sqlite3.Database> {
+  private async initializeDb(): Promise<any> {
+    if (typeof window !== 'undefined') {
+      throw new Error('Database operations are not allowed in the browser');
+    }
+
     const dbPath = join(process.cwd(), 'db/database.sqlite');
-    
     this.logger.info('Initializing database connection', this.CONTEXT, { dbPath });
     
-    return await open({
+    return await sqlite.open({
       filename: dbPath,
       driver: sqlite3.Database
     });
   }
 
-  public async getConnection(): Promise<sqlite3.Database> {
+  public async getConnection(): Promise<any> {
+    if (typeof window !== 'undefined') {
+      throw new Error('Database operations are not allowed in the browser');
+    }
+
     if (this.db) {
       return this.db;
     }
@@ -81,7 +96,6 @@ export class DatabaseService {
 
   private setCachedQuery(key: string, data: any): void {
     if (this.queryCache.size >= this.MAX_CACHE_SIZE) {
-      // Eliminar la entrada más antigua
       const oldestKey = this.queryCache.keys().next().value;
       this.queryCache.delete(oldestKey);
     }
@@ -92,7 +106,11 @@ export class DatabaseService {
     });
   }
 
-  public async query<T>(sql: string, params: any[] = []): Promise<T[]> {
+  public async query<T = any>(sql: string, params: any[] = []): Promise<T[]> {
+    if (typeof window !== 'undefined') {
+      throw new Error('Database operations are not allowed in the browser');
+    }
+
     const cacheKey = `${sql}-${JSON.stringify(params)}`;
     const cached = this.getCachedQuery(cacheKey);
     if (cached) return cached;
@@ -105,15 +123,23 @@ export class DatabaseService {
   }
 
   public async execute(sql: string, params: any[] = []): Promise<void> {
+    if (typeof window !== 'undefined') {
+      throw new Error('Database operations are not allowed in the browser');
+    }
+
     const db = await this.getConnection();
     await db.run(sql, params);
   }
 
-  public async transaction<T>(callback: (db: sqlite3.Database) => Promise<T>): Promise<T> {
+  public async transaction<T>(callback: (db: any) => Promise<T>): Promise<T> {
+    if (typeof window !== 'undefined') {
+      throw new Error('Database operations are not allowed in the browser');
+    }
+
     const db = await this.getConnection();
+    await db.run('BEGIN TRANSACTION');
     
     try {
-      await db.run('BEGIN TRANSACTION');
       const result = await callback(db);
       await db.run('COMMIT');
       return result;

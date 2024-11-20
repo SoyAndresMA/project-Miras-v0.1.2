@@ -1,8 +1,9 @@
 'use client';
 
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ServersCasparCG } from "../app/ServersCasparCG";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ServersCasparCG } from "@/components/app/ServersCasparCG";
+import { useOptimistic, useTransition } from "react";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -10,6 +11,18 @@ interface SettingsModalProps {
 }
 
 const SettingsModal = ({ isOpen, onClose }: SettingsModalProps) => {
+  const [isPending, startTransition] = useTransition();
+  const [optimisticSettings, setOptimisticSettings] = useOptimistic(
+    { activeTab: "servers" },
+    (state, newTab: string) => ({ ...state, activeTab: newTab })
+  );
+
+  const handleTabChange = (value: string) => {
+    startTransition(() => {
+      setOptimisticSettings(value);
+    });
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-6xl bg-gray-900 text-gray-100 border-gray-700">
@@ -17,42 +30,54 @@ const SettingsModal = ({ isOpen, onClose }: SettingsModalProps) => {
           <DialogTitle className="text-xl text-gray-100">Settings</DialogTitle>
         </DialogHeader>
 
-        <Tabs defaultValue="servers" className="w-full">
+        <Tabs 
+          defaultValue={optimisticSettings.activeTab} 
+          className="w-full"
+          onValueChange={handleTabChange}
+        >
           <TabsList className="bg-gray-800 mb-4">
             <TabsTrigger 
               value="general" 
               className="data-[state=active]:bg-gray-700 data-[state=active]:text-gray-100 text-gray-400"
+              disabled={isPending}
             >
               General
             </TabsTrigger>
             <TabsTrigger 
               value="servers"
               className="data-[state=active]:bg-gray-700 data-[state=active]:text-gray-100 text-gray-400"
+              disabled={isPending}
             >
               Servers
             </TabsTrigger>
             <TabsTrigger 
               value="live-stream"
               className="data-[state=active]:bg-gray-700 data-[state=active]:text-gray-100 text-gray-400"
+              disabled={isPending}
             >
               Live Stream
             </TabsTrigger>
             <TabsTrigger 
               value="gpi"
               className="data-[state=active]:bg-gray-700 data-[state=active]:text-gray-100 text-gray-400"
+              disabled={isPending}
             >
               GPI
             </TabsTrigger>
             <TabsTrigger 
               value="osc"
               className="data-[state=active]:bg-gray-700 data-[state=active]:text-gray-100 text-gray-400"
+              disabled={isPending}
             >
               OSC
             </TabsTrigger>
           </TabsList>
 
           <TabsContent value="general" className="mt-0">
-            General settings coming soon...
+            <div className="p-4 space-y-4">
+              <h3 className="text-lg font-medium">General Settings</h3>
+              {/* Implementar configuraciones generales aquí */}
+            </div>
           </TabsContent>
 
           <TabsContent value="servers" className="mt-0">
@@ -60,15 +85,24 @@ const SettingsModal = ({ isOpen, onClose }: SettingsModalProps) => {
           </TabsContent>
 
           <TabsContent value="live-stream" className="mt-0">
-            Live stream settings coming soon...
+            <div className="p-4 space-y-4">
+              <h3 className="text-lg font-medium">Live Stream Settings</h3>
+              {/* Implementar configuraciones de live stream aquí */}
+            </div>
           </TabsContent>
 
           <TabsContent value="gpi" className="mt-0">
-            GPI settings coming soon...
+            <div className="p-4 space-y-4">
+              <h3 className="text-lg font-medium">GPI Settings</h3>
+              {/* Implementar configuraciones de GPI aquí */}
+            </div>
           </TabsContent>
 
           <TabsContent value="osc" className="mt-0">
-            OSC settings coming soon...
+            <div className="p-4 space-y-4">
+              <h3 className="text-lg font-medium">OSC Settings</h3>
+              {/* Implementar configuraciones de OSC aquí */}
+            </div>
           </TabsContent>
         </Tabs>
       </DialogContent>
