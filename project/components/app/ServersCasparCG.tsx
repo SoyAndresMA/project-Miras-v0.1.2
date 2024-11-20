@@ -9,10 +9,10 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { Switch } from '@/components/ui/switch';
+import { useServerState } from '@/hooks/useServerState';
 
 export function ServersCasparCG() {
-  const [servers, setServers] = useState<DeviceConfig[]>([]);
-  const [selectedServer, setSelectedServer] = useState<DeviceConfig | null>(null);
+  const serverState = useServerState();
   const [isLoading, setIsLoading] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<string>("");
@@ -49,15 +49,7 @@ export function ServersCasparCG() {
       setConnectionStatus("Connection test successful");
       return data;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      setConnectionStatus(`Connection test failed: ${errorMessage}`);
-      
-      toast({
-        title: "Connection Failed",
-        description: errorMessage,
-        variant: "destructive"
-      });
-      
+      setConnectionStatus(error instanceof Error ? error.message : 'Connection test failed');
       throw error;
     } finally {
       clearTimeout(timeoutId);
@@ -94,14 +86,10 @@ export function ServersCasparCG() {
         setIsTesting(true);
         const updatedServer = await testServerConnection(server);
         
-        setServers(prevServers => 
-          prevServers.map(s => 
-            s.id === updatedServer.id ? updatedServer : s
-          )
-        );
+        serverState.updateServer(updatedServer);
 
-        if (selectedServer?.id === updatedServer.id) {
-          setSelectedServer(updatedServer);
+        if (serverState.selectedServer?.id === updatedServer.id) {
+          serverState.setSelectedServer(updatedServer);
         }
 
         console.log(`✨ Conexión exitosa con ${server.name}`);
@@ -167,7 +155,7 @@ export function ServersCasparCG() {
         })
       );
 
-      setServers(serversWithState);
+      serverState.setServers(serversWithState);
       console.log('✨ Carga de servidores completada');
     } catch (error) {
       console.error('❌ Error loading servers:', error);
@@ -189,7 +177,7 @@ export function ServersCasparCG() {
   // Efecto para mantener la conexión activa
   useEffect(() => {
     const checkConnections = async () => {
-      const connectedServers = servers.filter(s => s.connected && s.enabled);
+      const connectedServers = serverState.servers.filter(s => s.connected && s.enabled);
       for (const server of connectedServers) {
         try {
           const response = await fetch(`/api/casparcg/servers/${server.id}/state`, {
@@ -217,10 +205,10 @@ export function ServersCasparCG() {
     // Verificar conexiones cada 30 segundos
     const interval = setInterval(checkConnections, 30000);
     return () => clearInterval(interval);
-  }, [servers]);
+  }, [serverState.servers]);
 
   const handleNew = () => {
-    setSelectedServer({
+    serverState.setSelectedServer({
       id: 0,
       name: '',
       host: 'localhost',
@@ -239,28 +227,28 @@ export function ServersCasparCG() {
   };
 
   const handleUpdateServer = (field: string, value: any) => {
-    if (selectedServer) {
-      const updatedServer = { ...selectedServer, [field]: value };
-      setSelectedServer(updatedServer);
+    if (serverState.selectedServer) {
+      const updatedServer = { ...serverState.selectedServer, [field]: value };
+      serverState.setSelectedServer(updatedServer);
     }
   };
 
   const handleSave = async () => {
-    if (!selectedServer) return;
+    if (!serverState.selectedServer) return;
 
     try {
       setIsLoading(true);
       
-      const endpoint = selectedServer.id === 0 
+      const endpoint = serverState.selectedServer.id === 0 
         ? '/api/casparcg/servers' 
-        : `/api/casparcg/servers/${selectedServer.id}`;
+        : `/api/casparcg/servers/${serverState.selectedServer.id}`;
         
       const response = await fetch(endpoint, {
-        method: selectedServer.id === 0 ? 'POST' : 'PUT',
+        method: serverState.selectedServer.id === 0 ? 'POST' : 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(selectedServer),
+        body: JSON.stringify(serverState.selectedServer),
       });
 
       if (!response.ok) throw new Error('Failed to save server');
@@ -280,7 +268,7 @@ export function ServersCasparCG() {
 
       toast({
         title: "Success",
-        description: `Server ${selectedServer.id === 0 ? 'created' : 'updated'} successfully`
+        description: `Server ${serverState.selectedServer.id === 0 ? 'created' : 'updated'} successfully`
       });
 
       // Reload servers list
@@ -299,11 +287,11 @@ export function ServersCasparCG() {
   };
 
   const handleDelete = async () => {
-    if (!selectedServer?.id) return;
+    if (!serverState.selectedServer?.id) return;
 
     try {
       setIsLoading(true);
-      const response = await fetch(`/api/casparcg/servers/${selectedServer.id}`, {
+      const response = await fetch(`/api/casparcg/servers/${serverState.selectedServer.id}`, {
         method: 'DELETE'
       });
 
@@ -315,7 +303,7 @@ export function ServersCasparCG() {
       });
 
       await loadServers();
-      setSelectedServer(null);
+      serverState.setSelectedServer(null);
     } catch (error) {
       console.error('Error deleting server:', error);
       toast({
@@ -329,26 +317,22 @@ export function ServersCasparCG() {
   };
 
   const handleTestConnection = async () => {
-    if (!selectedServer) return;
+    if (!serverState.selectedServer) return;
 
     try {
       setIsTesting(true);
       setConnectionStatus("Starting connection test...");
       
-      const updatedServer = await testServerConnection(selectedServer);
+      const updatedServer = await testServerConnection(serverState.selectedServer);
       
-      setSelectedServer(updatedServer);
+      serverState.setSelectedServer(updatedServer);
       
       // Actualizar el servidor en la lista
-      setServers(prevServers => 
-        prevServers.map(server => 
-          server.id === updatedServer.id ? updatedServer : server
-        )
-      );
+      serverState.updateServer(updatedServer);
 
       toast({
         title: "Connection Successful",
-        description: `Successfully connected to ${selectedServer.name}`,
+        description: `Successfully connected to ${serverState.selectedServer.name}`,
       });
     } catch (error) {
       // El error ya se maneja en testServerConnection
@@ -360,9 +344,9 @@ export function ServersCasparCG() {
   };
 
   const handleUpdateServerField = (field: string | number | symbol, value: string | number) => {
-    if (selectedServer) {
-      setSelectedServer({
-        ...selectedServer,
+    if (serverState.selectedServer) {
+      serverState.setSelectedServer({
+        ...serverState.selectedServer,
         [field]: value
       });
     }
@@ -381,14 +365,14 @@ export function ServersCasparCG() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {servers.map((server) => (
+            {serverState.servers.map((server) => (
               <TableRow 
                 key={server.id}
                 className={cn(
                   "cursor-pointer text-foreground",
-                  selectedServer?.id === server.id && "bg-accent"
+                  serverState.selectedServer?.id === server.id && "bg-accent"
                 )}
-                onClick={() => setSelectedServer(server)}
+                onClick={() => serverState.setSelectedServer(server)}
               >
                 <TableCell className="text-foreground">{server.name}</TableCell>
                 <TableCell>
@@ -404,7 +388,7 @@ export function ServersCasparCG() {
       </div>
 
       {/* Panel de configuración */}
-      {selectedServer ? (
+      {serverState.selectedServer ? (
         <div className="overflow-y-auto">
           <div className="grid grid-cols-2 gap-4">
             {/* Left Column */}
@@ -413,7 +397,7 @@ export function ServersCasparCG() {
                 <Label htmlFor="name" className="text-foreground">Server Name</Label>
                 <Input
                   id="name"
-                  value={selectedServer.name}
+                  value={serverState.selectedServer.name}
                   onChange={(e) => handleUpdateServer('name', e.target.value)}
                   className="text-foreground"
                 />
@@ -422,7 +406,7 @@ export function ServersCasparCG() {
                 <Label htmlFor="host" className="text-foreground">Host</Label>
                 <Input
                   id="host"
-                  value={selectedServer.host}
+                  value={serverState.selectedServer.host}
                   onChange={(e) => handleUpdateServer('host', e.target.value)}
                   className="text-foreground"
                 />
@@ -432,7 +416,7 @@ export function ServersCasparCG() {
                 <Input
                   id="port"
                   type="number"
-                  value={selectedServer.port}
+                  value={serverState.selectedServer.port}
                   onChange={(e) => handleUpdateServer('port', parseInt(e.target.value))}
                   className="text-foreground"
                 />
@@ -441,7 +425,7 @@ export function ServersCasparCG() {
                 <Label htmlFor="description" className="text-foreground">Description</Label>
                 <Input
                   id="description"
-                  value={selectedServer.description || ''}
+                  value={serverState.selectedServer.description || ''}
                   onChange={(e) => handleUpdateServer('description', e.target.value)}
                   className="text-foreground"
                 />
@@ -449,7 +433,7 @@ export function ServersCasparCG() {
               <div className="flex items-center space-x-2">
                 <Switch
                   id="enabled"
-                  checked={selectedServer.enabled}
+                  checked={serverState.selectedServer.enabled}
                   onCheckedChange={(checked) => handleUpdateServer('enabled', checked)}
                 />
                 <Label htmlFor="enabled" className="text-foreground">Enabled</Label>
@@ -461,14 +445,14 @@ export function ServersCasparCG() {
               <div className="space-y-2">
                 <Label className="text-foreground">Server Version</Label>
                 <div className="p-2 bg-secondary/20 rounded-md text-foreground">
-                  {selectedServer.version || 'Not connected'}
+                  {serverState.selectedServer.version || 'Not connected'}
                 </div>
               </div>
               <div className="space-y-2">
                 <Label className="text-foreground">Channels</Label>
                 <div className="space-y-1">
-                  {selectedServer.channel_formats ? (
-                    selectedServer.channel_formats.split(',').map((channel, index) => (
+                  {serverState.selectedServer.channel_formats ? (
+                    serverState.selectedServer.channel_formats.split(',').map((channel, index) => (
                       <div key={index} className="p-2 bg-secondary/20 rounded-md text-foreground">
                         Channel {index + 1}: {channel}
                       </div>
@@ -482,7 +466,7 @@ export function ServersCasparCG() {
               </div>
               <div className="flex items-center space-x-2">
                 <Switch
-                  checked={selectedServer.is_shadow}
+                  checked={serverState.selectedServer.is_shadow}
                   onCheckedChange={(checked) => handleUpdateServer('is_shadow', checked)}
                 />
                 <Label className="text-foreground">Shadow Server</Label>
@@ -497,20 +481,20 @@ export function ServersCasparCG() {
                 <div className="flex items-center space-x-2">
                   <div className={cn(
                     "w-3 h-3 rounded-full",
-                    selectedServer.connected ? "bg-green-500" : "bg-red-500"
+                    serverState.selectedServer.connected ? "bg-green-500" : "bg-red-500"
                   )} />
                   <span className="text-sm font-medium text-foreground">
-                    {selectedServer.connected ? "Connected" : "Disconnected"}
+                    {serverState.selectedServer.connected ? "Connected" : "Disconnected"}
                   </span>
                 </div>
                 <Button
                   variant="secondary"
                   size="sm"
-                  onClick={() => handleConnectServer(selectedServer)}
+                  onClick={() => handleConnectServer(serverState.selectedServer)}
                   disabled={isTesting}
                   className="text-foreground"
                 >
-                  {selectedServer.connected ? "Disconnect" : "Connect"}
+                  {serverState.selectedServer.connected ? "Disconnect" : "Connect"}
                 </Button>
                 <Button
                   variant="outline"

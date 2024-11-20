@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 import React, { useRef, useEffect } from 'react';
 import { Menu, Heart, Share, Save, AlertCircle, Loader2 } from 'lucide-react';
@@ -6,7 +6,6 @@ import { Project } from '@/lib/types/project';
 import { MenuSection } from '@/lib/types/layout';
 import { DeviceConfig } from '@/lib/types/device';
 import { cn } from '@/lib/utils';
-import { useServerState } from '@/hooks/useServerState';
 
 interface TopBannerProps {
   currentProject: Project | null;
@@ -50,12 +49,11 @@ export function TopBanner({
 
   return (
     <div className="h-8 bg-gray-800 shadow-md flex items-center px-1 border-b border-gray-700">
-      {/* Left Section: Menu, Brand, Version, Project */}
       <div className="flex items-center space-x-2 flex-1">
         <div className="relative" ref={menuRef}>
           <button 
             className="p-1 hover:bg-gray-700 rounded transition-colors"
-            onClick={() => setIsMenuOpen(!isMenuOpen)}
+            onClick={() => setIsMenuOpen(true)}
             disabled={loading}
           >
             <Menu className="h-4 w-4" />
@@ -110,52 +108,55 @@ export function TopBanner({
         </div>
       </div>
 
-      {/* Center Section: CasparCG Servers Status */}
+      {/* CasparCG Servers Status */}
       <div className="flex-1 flex items-center justify-center space-x-2">
-        {servers.map((server) => {
-          const { state, connectServer, disconnectServer } = useServerState(server.id.toString());
-          
-          return (
-            <div key={`server-${server.id}`} className="flex items-center space-x-2">
-              <div 
-                key={`status-${server.id}`}
-                className={cn(
-                  "relative w-4 h-4 rounded-full",
-                  state.connected ? "bg-green-500" : "bg-red-500",
-                  server.enabled ? "cursor-pointer hover:opacity-80" : "opacity-50 cursor-not-allowed",
-                  state.loading && "animate-pulse"
-                )}
-                onDoubleClick={async () => {
-                  if (!server.enabled || state.loading) return;
+        {servers.map((server) => (
+          <div key={`server-${server.id}`} className="flex items-center space-x-2">
+            <div 
+              key={`status-${server.id}`}
+              className={`relative w-4 h-4 rounded-full ${
+                server.connected ? 'bg-green-500' : 'bg-red-500'
+              } ${server.enabled ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed'}`}
+              onDoubleClick={async () => {
+                if (!server.enabled) return;
+                
+                if (!server.connected) {
                   try {
-                    if (state.connected) {
-                      await disconnectServer();
-                    } else {
-                      await connectServer();
+                    const response = await fetch(`/api/casparcg/servers/${server.id}/connect`, {
+                      method: 'POST',
+                    });
+                    if (!response.ok) {
+                      const error = await response.json();
+                      throw new Error(error.message || 'Failed to connect to server');
                     }
                   } catch (error) {
-                    console.error('Error toggling server connection:', error);
+                    console.error('Error connecting to server:', error);
                   }
-                }}
-                title={`${server.name} (${server.host}:${server.port})
-${state.error || (state.connected ? 'Double click to disconnect' : 'Double click to connect')}`}
-              >
-                {state.loading && (
-                  <Loader2 className="absolute inset-0 w-full h-full animate-spin text-white" />
-                )}
-              </div>
-              <span className={cn(
-                "text-sm font-medium",
-                state.error ? "text-red-400" : "text-gray-300"
-              )}>
-                {server.name || 'No Server'}
-              </span>
+                } else {
+                  try {
+                    const response = await fetch(`/api/casparcg/servers/${server.id}/disconnect`, {
+                      method: 'POST',
+                    });
+                    if (!response.ok) {
+                      const error = await response.json();
+                      throw new Error(error.message || 'Failed to disconnect from server');
+                    }
+                  } catch (error) {
+                    console.error('Error disconnecting from server:', error);
+                  }
+                }
+              }}
+              title={`${server.name} (${server.host}:${server.port})\nDouble click to ${server.connected ? 'disconnect' : 'connect'}`}
+            >
+              {server.loading && (
+                <Loader2 className="absolute inset-0 w-full h-full animate-spin text-white" />
+              )}
             </div>
-          );
-        })}
+            <span className="text-sm font-medium">{server.name || 'No Server'}</span>
+          </div>
+        ))}
       </div>
       
-      {/* Right Section: Status, Dynamic Info, Actions */}
       <div className="flex items-center space-x-2">
         <span key="status" className={cn(
           "text-gray-400 text-sm",

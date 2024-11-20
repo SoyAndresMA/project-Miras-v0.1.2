@@ -1,81 +1,92 @@
-import { useState, useEffect } from 'react';
-import { ServerManager } from '@/lib/services/ServerManager';
-import EventBus from '@/lib/events/EventBus';
+'use client';
+
+import { create } from 'zustand';
+import { DeviceConfig } from '@/lib/types/device';
+import { CasparServer } from '@/server/device/caspar/CasparServer';
 
 interface ServerState {
-  connected: boolean;
+  servers: DeviceConfig[];
+  isProjectSelectorOpen: boolean;
+  isSettingsOpen: boolean;
   loading: boolean;
   error: string | null;
+  setServers: (servers: DeviceConfig[]) => void;
+  setIsProjectSelectorOpen: (isOpen: boolean) => void;
+  setIsSettingsOpen: (isOpen: boolean) => void;
+  getServerInstance: (id: number) => CasparServer | undefined;
+  refreshServers: () => Promise<void>;
+  updateServer: (server: DeviceConfig) => Promise<void>;
+  deleteServer: (id: string) => Promise<void>;
+  createServer: (server: DeviceConfig) => Promise<void>;
 }
 
-export function useServerState(serverId: string) {
-  const [state, setState] = useState<ServerState>({
-    connected: false,
-    loading: false,
-    error: null
-  });
-
-  useEffect(() => {
-    const serverManager = ServerManager.getInstance();
-    
-    // Get initial state
-    const initialState = serverManager.getServerState(serverId);
-    setState(initialState);
-
-    // Subscribe to server state changes
-    const unsubscribe = serverManager.subscribeToServerState(serverId, setState);
-
-    // Subscribe to EventBus events
-    const handleServerStatus = (event: any) => {
-      if (event.serverId.toString() === serverId) {
-        setState(prev => ({
-          ...prev,
-          connected: event.connected,
-          error: event.error || null,
-          loading: false
-        }));
-      }
-    };
-
-    EventBus.on('SERVER_STATUS', handleServerStatus);
-
-    return () => {
-      unsubscribe();
-      EventBus.off('SERVER_STATUS', handleServerStatus);
-    };
-  }, [serverId]);
-
-  const connectServer = async () => {
-    setState(prev => ({ ...prev, loading: true, error: null }));
+export const useServerState = create<ServerState>((set, get) => ({
+  servers: [],
+  isProjectSelectorOpen: false,
+  isSettingsOpen: false,
+  loading: false,
+  error: null,
+  setServers: (servers) => set({ servers }),
+  setIsProjectSelectorOpen: (isOpen) => set({ isProjectSelectorOpen: isOpen }),
+  setIsSettingsOpen: (isOpen) => set({ isSettingsOpen: isOpen }),
+  getServerInstance: (id) => CasparServer.getExistingInstance(id),
+  
+  refreshServers: async () => {
     try {
-      const serverManager = ServerManager.getInstance();
-      await serverManager.connectServer(serverId);
+      set({ loading: true, error: null });
+      const response = await fetch('/api/servers');
+      if (!response.ok) throw new Error('Failed to fetch servers');
+      const servers = await response.json();
+      set({ servers, loading: false });
     } catch (error) {
-      setState(prev => ({ 
-        ...prev, 
-        error: error instanceof Error ? error.message : 'Unknown error',
-        loading: false 
-      }));
+      set({ error: error instanceof Error ? error.message : 'Unknown error', loading: false });
+      console.error('Error refreshing servers:', error);
     }
-  };
+  },
 
-  const disconnectServer = async () => {
-    setState(prev => ({ ...prev, loading: true, error: null }));
+  updateServer: async (server) => {
     try {
-      const serverManager = ServerManager.getInstance();
-      await serverManager.disconnectServer(serverId);
+      set({ loading: true, error: null });
+      const response = await fetch('/api/servers', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(server)
+      });
+      if (!response.ok) throw new Error('Failed to update server');
+      await get().refreshServers();
     } catch (error) {
-      setState(prev => ({ 
-        ...prev, 
-        error: error instanceof Error ? error.message : 'Unknown error',
-        loading: false 
-      }));
+      set({ error: error instanceof Error ? error.message : 'Unknown error', loading: false });
+      console.error('Error updating server:', error);
     }
-  };
+  },
 
-  return {
-    state,
-    connectServer,
-    disconnectServer
-  };
-}
+  deleteServer: async (id) => {
+    try {
+      set({ loading: true, error: null });
+      const response = await fetch(`/api/servers/${id}`, {
+        method: 'DELETE'
+      });
+      if (!response.ok) throw new Error('Failed to delete server');
+      await get().refreshServers();
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : 'Unknown error', loading: false });
+      console.error('Error deleting server:', error);
+    }
+  },
+
+  createServer: async (server) => {
+    try {
+      set({ loading: true, error: null });
+      const response = await fetch('/api/servers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(server)
+      });
+      if (!response.ok) throw new Error('Failed to create server');
+      await get().refreshServers();
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : 'Unknown error', loading: false });
+      console.error('Error creating server:', error);
+    }
+  }
+}));

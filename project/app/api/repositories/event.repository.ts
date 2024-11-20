@@ -1,7 +1,7 @@
 import { BaseRepository } from './base.repository';
 import { MEvent, CreateMEventInput } from '@/lib/types/event';
 import { LoggerService } from '@/lib/services/logger.service';
-import { DatabaseService } from '../services/database.service';
+import { DatabaseService } from '@/server/services/database.service';
 
 export class EventRepository extends BaseRepository<MEvent> {
   private static instance: EventRepository;

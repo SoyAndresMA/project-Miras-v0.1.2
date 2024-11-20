@@ -1,5 +1,5 @@
 import sqlite3 from 'sqlite3';
-import { open, Database } from 'sqlite';
+import { open } from 'sqlite';
 import { join } from 'path';
 import { LoggerService } from '@/lib/services/logger.service';
 
@@ -10,12 +10,13 @@ interface QueryCacheEntry {
 
 export class DatabaseService {
   private static instance: DatabaseService;
-  private db: Database | null = null;
+  private db: sqlite3.Database | null = null;
   private queryCache: Map<string, QueryCacheEntry> = new Map();
   private readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutos
   private readonly MAX_CACHE_SIZE = 100;
   private readonly logger = LoggerService.getInstance();
-  private connectionPromise: Promise<Database> | null = null;
+  private connectionPromise: Promise<sqlite3.Database> | null = null;
+  private readonly CONTEXT = 'DatabaseService';
 
   private constructor() {}
 
@@ -26,10 +27,10 @@ export class DatabaseService {
     return this.instance;
   }
 
-  private async initializeDb(): Promise<Database> {
+  private async initializeDb(): Promise<sqlite3.Database> {
     const dbPath = join(process.cwd(), 'db/database.sqlite');
     
-    this.logger.info('Initializing database connection', { dbPath });
+    this.logger.info('Initializing database connection', this.CONTEXT, { dbPath });
     
     return await open({
       filename: dbPath,
@@ -37,7 +38,7 @@ export class DatabaseService {
     });
   }
 
-  public async getConnection(): Promise<Database> {
+  public async getConnection(): Promise<sqlite3.Database> {
     if (this.db) {
       return this.db;
     }
@@ -53,7 +54,7 @@ export class DatabaseService {
       return this.db;
     } catch (error) {
       this.connectionPromise = null;
-      this.logger.error('Failed to initialize database connection', { error });
+      this.logger.error('Failed to initialize database connection', error as Error, this.CONTEXT);
       throw error;
     }
   }
@@ -108,7 +109,7 @@ export class DatabaseService {
     await db.run(sql, params);
   }
 
-  public async transaction<T>(callback: (db: Database) => Promise<T>): Promise<T> {
+  public async transaction<T>(callback: (db: sqlite3.Database) => Promise<T>): Promise<T> {
     const db = await this.getConnection();
     
     try {

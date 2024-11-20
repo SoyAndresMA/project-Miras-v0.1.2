@@ -1,10 +1,11 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Loader2 } from "lucide-react";
 import { Project } from "@/lib/types/project";
 import { cn } from "@/lib/utils";
+import { getProjects } from "@/app/actions/server";
 
 interface ProjectSelectorModalProps {
   isOpen: boolean;
@@ -12,11 +13,11 @@ interface ProjectSelectorModalProps {
   onSelectProject: (project: Project) => void;
 }
 
-export default function ProjectSelectorModal({
+const ProjectSelectorModal = ({
   isOpen,
   onClose,
   onSelectProject,
-}: ProjectSelectorModalProps) {
+}: ProjectSelectorModalProps) => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -32,10 +33,8 @@ export default function ProjectSelectorModal({
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch("/api/projects");
-      if (!response.ok) throw new Error("Failed to load projects");
-      const data = await response.json();
-      setProjects(Array.isArray(data) ? data : []);
+      const data = await getProjects();
+      setProjects(data);
     } catch (err) {
       setError("Error loading projects. Please try again.");
     } finally {
@@ -51,46 +50,41 @@ export default function ProjectSelectorModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-[525px] bg-gray-800 text-gray-100 border-gray-700">
+      <DialogContent>
         <DialogHeader>
-          <DialogTitle className="text-xl font-semibold">Select Project</DialogTitle>
+          <DialogTitle>Select Project</DialogTitle>
         </DialogHeader>
-
-        <div className="relative min-h-[300px] border border-gray-700 rounded-md">
+        <div className="mt-4">
           {loading ? (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+            <div className="flex justify-center items-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin" />
             </div>
           ) : error ? (
-            <div className="absolute inset-0 flex items-center justify-center text-red-400">
-              {error}
-            </div>
+            <div className="text-red-500 text-center py-4">{error}</div>
           ) : projects.length === 0 ? (
-            <div className="absolute inset-0 flex items-center justify-center text-gray-400">
-              No projects found
-            </div>
+            <div className="text-center py-4 text-gray-500">No projects found</div>
           ) : (
-            <div className="divide-y divide-gray-700">
+            <div className="space-y-2">
               {projects.map((project) => (
                 <button
                   key={project.id}
                   onClick={() => handleProjectSelect(project)}
                   className={cn(
-                    "w-full px-4 py-3 text-left hover:bg-gray-700/50 transition-colors",
-                    "flex items-center justify-between",
-                    selectedProjectId === project.id && "bg-gray-700"
+                    "w-full text-left px-4 py-3 rounded-lg transition-colors",
+                    "hover:bg-gray-100 dark:hover:bg-gray-800",
+                    selectedProjectId === project.id
+                      ? "bg-gray-100 dark:bg-gray-800"
+                      : "bg-white dark:bg-gray-900"
                   )}
                 >
-                  <div>
-                    <h3 className="font-medium">{project.name}</h3>
-                    {project.description && (
-                      <p className="text-sm text-gray-400 mt-1 line-clamp-2">
-                        {project.description}
-                      </p>
-                    )}
-                  </div>
-                  <div className="text-sm text-gray-400">
-                    {new Date(project.created_at).toLocaleDateString()}
+                  <div className="font-medium">{project.name}</div>
+                  {project.description && (
+                    <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                      {project.description}
+                    </div>
+                  )}
+                  <div className="text-xs text-gray-400 dark:text-gray-500 mt-2">
+                    Created {new Date(project.createdAt).toLocaleDateString()}
                   </div>
                 </button>
               ))}
@@ -100,4 +94,6 @@ export default function ProjectSelectorModal({
       </DialogContent>
     </Dialog>
   );
-}
+};
+
+export default ProjectSelectorModal;

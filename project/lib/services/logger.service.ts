@@ -24,6 +24,7 @@ export class LoggerService {
   private currentLogFile: string;
   private logCache: Map<string, LogEntry[]>;
   private readonly MAX_CACHE_SIZE = 100;
+  private defaultContext?: string;
 
   private constructor() {
     this.logDir = join(process.cwd(), 'logs');
@@ -37,6 +38,12 @@ export class LoggerService {
       LoggerService.instance = new LoggerService();
     }
     return LoggerService.instance;
+  }
+
+  public static create(context: string): LoggerService {
+    const instance = LoggerService.getInstance();
+    instance.defaultContext = context;
+    return instance;
   }
 
   private async initializeLogDirectory() {
@@ -129,18 +136,18 @@ export class LoggerService {
   }
 
   public debug(message: string, context?: string, metadata?: Record<string, any>) {
-    return this.log(LogLevel.DEBUG, message, context, undefined, metadata);
+    return this.log(LogLevel.DEBUG, message, context || this.defaultContext, undefined, metadata);
   }
 
   public info(message: string, context?: string, metadata?: Record<string, any>) {
-    return this.log(LogLevel.INFO, message, context, undefined, metadata);
+    return this.log(LogLevel.INFO, message, context || this.defaultContext, undefined, metadata);
   }
 
   public warn(message: string, context?: string, metadata?: Record<string, any>) {
-    return this.log(LogLevel.WARN, message, context, undefined, metadata);
+    return this.log(LogLevel.WARN, message, context || this.defaultContext, undefined, metadata);
   }
 
   public error(message: string, error?: Error, context?: string, metadata?: Record<string, any>) {
-    return this.log(LogLevel.ERROR, message, context, error, metadata);
+    return this.log(LogLevel.ERROR, message, context || this.defaultContext, error, metadata);
   }
 }

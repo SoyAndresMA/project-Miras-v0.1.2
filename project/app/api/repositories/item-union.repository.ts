@@ -2,25 +2,17 @@ import { BaseRepository } from './base.repository';
 import { MItemUnion, CreateMItemUnionInput } from '@/lib/types/item-union';
 import { LoggerService } from '@/lib/services/logger.service';
 
-export class ItemUnionRepository extends BaseRepository {
-  private static instance: ItemUnionRepository;
+export class ItemUnionRepository extends BaseRepository<MItemUnion> {
   private readonly logger = LoggerService.getInstance();
   private readonly context = 'ItemUnionRepository';
 
-  private constructor() {
-    super();
-  }
-
-  public static getInstance(): ItemUnionRepository {
-    if (!this.instance) {
-      this.instance = new ItemUnionRepository();
-    }
-    return this.instance;
+  constructor() {
+    super('ItemUnionRepository');
   }
 
   async findAll(): Promise<MItemUnion[]> {
     this.logger.debug('Fetching all item unions', this.context);
-    return this.dbService.query<MItemUnion[]>(
+    return this.query<MItemUnion>(
       'SELECT * FROM mitem_unions ORDER BY name',
       [],
       { cache: true, context: this.context }
@@ -29,7 +21,7 @@ export class ItemUnionRepository extends BaseRepository {
 
   async findById(id: number): Promise<MItemUnion | null> {
     this.logger.debug('Fetching item union by ID', this.context, { id });
-    const unions = await this.dbService.query<MItemUnion[]>(
+    const unions = await this.query<MItemUnion>(
       'SELECT * FROM mitem_unions WHERE id = ?',
       [id],
       { cache: true, context: this.context }
@@ -40,7 +32,7 @@ export class ItemUnionRepository extends BaseRepository {
   async create(input: CreateMItemUnionInput): Promise<MItemUnion> {
     this.logger.info('Creating new item union', this.context, { input });
     
-    return this.dbService.transaction(async (db) => {
+    return this.transaction(async (db) => {
       const { lastID } = await db.run(
         `INSERT INTO mitem_unions (name, icon, description) 
          VALUES (?, ?, ?)`,
@@ -59,57 +51,46 @@ export class ItemUnionRepository extends BaseRepository {
     }, this.context);
   }
 
-  async update(id: number, input: Partial<CreateMItemUnionInput>): Promise<MItemUnion> {
-    this.logger.info('Updating item union', this.context, { id, input });
+  async update(id: number, data: Partial<MItemUnion>): Promise<MItemUnion> {
+    this.logger.info('Updating item union', this.context, { id, data });
     
-    return this.dbService.transaction(async (db) => {
-      const union = await this.findById(id);
-      if (!union) {
-        const error = new Error('Item union not found');
-        this.logger.error('Item union update failed', error, this.context, { id, input });
-        throw error;
-      }
-
-      const updates: string[] = [];
+    return this.transaction(async (db) => {
+      const setClauses: string[] = [];
       const values: any[] = [];
 
-      if (input.name !== undefined) {
-        updates.push('name = ?');
-        values.push(input.name);
-      }
-      if (input.icon !== undefined) {
-        updates.push('icon = ?');
-        values.push(input.icon);
-      }
-      if (input.description !== undefined) {
-        updates.push('description = ?');
-        values.push(input.description);
+      Object.entries(data).forEach(([key, value]) => {
+        if (value !== undefined) {
+          setClauses.push(`${key} = ?`);
+          values.push(value);
+        }
+      });
+
+      if (setClauses.length === 0) {
+        return (await this.findById(id))!;
       }
 
-      if (updates.length > 0) {
-        values.push(id);
-        await db.run(
-          `UPDATE mitem_unions SET ${updates.join(', ')} WHERE id = ?`,
-          values
-        );
-      }
+      values.push(id);
+      await db.run(
+        `UPDATE mitem_unions SET ${setClauses.join(', ')} WHERE id = ?`,
+        values
+      );
 
-      const updatedUnion = await this.findById(id);
-      if (!updatedUnion) {
+      const union = await this.findById(id);
+      if (!union) {
         const error = new Error('Item union not found after update');
-        this.logger.error('Item union update failed', error, this.context, { id, input });
+        this.logger.error('Item union update failed', error, this.context, { id, data });
         throw error;
       }
 
       this.logger.info('Item union updated successfully', this.context, { id });
-      return updatedUnion;
+      return union;
     }, this.context);
   }
 
   async delete(id: number): Promise<void> {
     this.logger.info('Deleting item union', this.context, { id });
     
-    await this.dbService.transaction(async (db) => {
+    await this.transaction(async (db) => {
       const union = await this.findById(id);
       if (!union) {
         const error = new Error('Item union not found');

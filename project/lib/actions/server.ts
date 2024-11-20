@@ -1,15 +1,20 @@
-'use server';
+"use server";
 
 import { CasparServer } from '@/server/device/caspar/CasparServer';
+import { LoggerService } from '@/lib/services/logger.service';
 
-export async function getServerState() {
-  const server = await CasparServer.getInstance({
-    id: 1,
-    name: 'LENOVO',
-    host: '192.168.0.194',
-    port: 5250,
-    enabled: true
-  });
+const context = 'ServerActions';
+const logger = LoggerService.create(context);
 
-  return CasparServer.getState(1);
+export async function getServerState(serverId: number) {
+  logger.debug('Getting server state', { serverId });
+  
+  try {
+    const state = await CasparServer.getState(serverId);
+    logger.debug('Server state retrieved', { serverId, state });
+    return state;
+  } catch (error) {
+    logger.error('Failed to get server state', { serverId, error });
+    throw error;
+  }
 }

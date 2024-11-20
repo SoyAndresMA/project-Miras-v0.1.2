@@ -1,6 +1,10 @@
 "use server";
 
-import { DatabaseService } from '../api/services/database.service';
+import { DatabaseService } from '@/server/services/database.service';
+import { LoggerService } from '@/lib/services/logger.service';
+
+const context = 'ItemActions';
+const logger = LoggerService.create(context);
 
 export async function updateItemUnion(
   itemId: number,

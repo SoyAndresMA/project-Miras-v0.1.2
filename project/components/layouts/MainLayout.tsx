@@ -1,114 +1,69 @@
-"use client";
+'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import MainLayoutUI from './MainLayoutUI';
-import ProjectSelectorModal from '../projects/ProjectSelectorModal';
-import { useMainLayout } from '@/hooks/useMainLayout';
-import { MenuSection } from '@/lib/types/layout';
-import { Menu, Settings as SettingsIcon } from 'lucide-react';
-import { Separator } from '@/components/ui/separator';
-import { Settings } from '../app/Settings';
-import { getServerState } from '@/lib/actions/server';
+import { useAppState } from '@/hooks/useAppState';
+import { useServerState } from '@/hooks/useServerState';
+import { Project } from '@/lib/types/project';
+import { saveProject } from '@/app/actions/server';
+import ProjectSelectorModal from '@/components/projects/ProjectSelectorModal';
+import SettingsModal from '@/components/settings/SettingsModal';
 
 interface MainLayoutProps {
   children: React.ReactNode;
-  initialState: any; // Estado inicial desde el servidor
 }
 
-export function MainLayout({ children, initialState }: MainLayoutProps) {
-  const [state, setState] = useState(initialState);
-  const {
-    state: {
-      currentProject,
-      isMenuOpen,
-      dynamicInfo,
-      isProjectSelectorOpen,
-      isSettingsOpen,
-      error,
-      loading,
-      isSaving,
-      hasUnsavedChanges,
-      appVersion,
-      menuItems,
-      servers
-    },
-    actions: {
-      setIsMenuOpen,
-      setIsProjectSelectorOpen,
-      setIsSettingsOpen,
-      saveProject,
-      closeProject,
-      setMenuItems,
-      loadFullProject
-    }
-  } = useMainLayout(initialState);
+export function MainLayout({ children }: MainLayoutProps) {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
+  const { 
+    currentProject,
+    loading,
+    hasUnsavedChanges,
+    dynamicInfo,
+    menuItems,
+    appVersion,
+    isProjectSelectorOpen,
+    setIsProjectSelectorOpen,
+    isSettingsOpen,
+    setIsSettingsOpen,
+    servers
+  } = useAppState();
 
-  // Initialize menu items
-  useEffect(() => {
-    const defaultMenuItems: MenuSection[] = [
-      {
-        label: "File",
-        submenu: [
-          {
-            label: "Open Project",
-            action: () => setIsProjectSelectorOpen(true),
-            icon: <Menu className="h-4 w-4" />
-          },
-          {
-            label: "Close Project",
-            action: closeProject,
-            disabled: !currentProject,
-            icon: <Menu className="h-4 w-4" />
-          }
-        ]
-      },
-      {
-        label: "",
-        submenu: [
-          {
-            label: "Settings",
-            action: () => setIsSettingsOpen(true),
-            icon: <SettingsIcon className="h-4 w-4" />
-          }
-        ]
-      }
-    ];
-    setMenuItems(defaultMenuItems);
-  }, [currentProject, setIsProjectSelectorOpen, closeProject, setMenuItems, setIsSettingsOpen]);
+  const { refreshServers } = useServerState();
 
-  // Solo actualizamos el estado cuando cambia algo en el servidor
   useEffect(() => {
-    let mounted = true;
+    // Cargar servidores inicialmente
+    refreshServers();
+
+    // Refrescar cada 30 segundos
+    const interval = setInterval(refreshServers, 30000);
+    return () => clearInterval(interval);
+  }, [refreshServers]);
+
+  const handleSaveProject = async () => {
+    if (!currentProject) return;
     
-    const checkForUpdates = async () => {
-      if (!mounted) return;
-      
-      try {
-        const serverState = await getServerState();
-        // Solo actualizamos si hay cambios
-        if (JSON.stringify(serverState) !== JSON.stringify(state.servers)) {
-          setState(prev => ({
-            ...prev,
-            servers: serverState
-          }));
-        }
-      } catch (error) {
-        console.error('Error checking server state:', error);
-      }
-    };
-
-    const interval = setInterval(checkForUpdates, 20000);
-
-    return () => {
-      mounted = false;
-      clearInterval(interval);
-    };
-  }, []);
-
-  const handleProjectSelect = async (projectId: number) => {
-    await loadFullProject(projectId);
-    setIsProjectSelectorOpen(false);
+    try {
+      setIsSaving(true);
+      await saveProject(currentProject);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save project');
+    } finally {
+      setIsSaving(false);
+    }
   };
+
+  // Transform menu items to add className to icons
+  const processedMenuItems = menuItems.map(section => ({
+    ...section,
+    submenu: section.submenu?.map(item => ({
+      ...item,
+      icon: item.icon ? React.createElement(item.icon, { className: 'h-4 w-4' }) : null
+    })) || []
+  }));
 
   return (
     <>
@@ -121,21 +76,28 @@ export function MainLayout({ children, initialState }: MainLayoutProps) {
         isSaving={isSaving}
         hasUnsavedChanges={hasUnsavedChanges}
         appVersion={appVersion}
-        menuItems={menuItems}
+        menuItems={processedMenuItems}
         servers={servers}
         setIsMenuOpen={setIsMenuOpen}
-        saveProject={saveProject}
+        saveProject={handleSaveProject}
       >
         {children}
       </MainLayoutUI>
 
-      <ProjectSelectorModal
+      <ProjectSelectorModal 
         isOpen={isProjectSelectorOpen}
         onClose={() => setIsProjectSelectorOpen(false)}
-        onSelectProject={(project) => handleProjectSelect(project.id)}
+        onSelectProject={async (project) => {
+          try {
+            await saveProject(project);
+            setIsProjectSelectorOpen(false);
+          } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to save project');
+          }
+        }}
       />
 
-      <Settings
+      <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
       />

@@ -7,8 +7,8 @@ import { CasparMicRepository } from '../../repositories/caspar-mic.repository';
 import { CasparGraphRepository } from '../../repositories/caspar-graph.repository';
 import { LoggerService } from '@/lib/services/logger.service';
 
-const logger = LoggerService.getInstance();
 const context = 'ProjectAPI';
+const logger = LoggerService.create(context);
 
 export async function GET(
   request: Request,
@@ -22,13 +22,13 @@ export async function GET(
     const micRepo = CasparMicRepository.getInstance();
     const graphRepo = CasparGraphRepository.getInstance();
 
-    logger.debug('Fetching project details', context, { projectId: params.id });
+    logger.debug('Fetching project details', { projectId: params.id });
     
     // Get project details
     const project = await projectRepo.findById(parseInt(params.id));
     
     if (!project) {
-      logger.warn('Project not found', context, { projectId: params.id });
+      logger.warn('Project not found', { projectId: params.id });
       return NextResponse.json(
         { error: 'Project not found' },
         { status: 404 }
@@ -118,7 +118,7 @@ export async function GET(
       };
     });
 
-    logger.info('Project fetched successfully', context, { 
+    logger.info('Project fetched successfully', { 
       projectId: params.id,
       eventCount: events.length,
       itemCount: itemsMap.size
@@ -131,7 +131,7 @@ export async function GET(
       items: Array.from(itemsMap.values())
     });
   } catch (error) {
-    logger.error('Failed to fetch project', error as Error, context, { projectId: params.id });
+    logger.error('Failed to fetch project', error as Error, { projectId: params.id });
     return NextResponse.json(
       { error: 'Failed to fetch project' },
       { status: 500 }

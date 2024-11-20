@@ -3,8 +3,8 @@ import { z } from 'zod';
 import { CasparServerRepository } from '@/app/api/repositories/caspar-server.repository';
 import { LoggerService } from '@/lib/services/logger.service';
 
-const logger = LoggerService.getInstance();
 const context = 'CasparServersAPI';
+const logger = LoggerService.create(context);
 
 // Schema de validación para servidores CasparCG
 const serverSchema = z.object({
@@ -31,21 +31,21 @@ export async function GET(request: Request) {
     if (id) {
       const server = await repository.findById(Number(id));
       if (!server) {
-        logger.warn('Server not found', context, { serverId: id });
+        logger.warn('Server not found', { serverId: id });
         return NextResponse.json(
           { error: 'Server not found' },
           { status: 404 }
         );
       }
-      logger.debug('Server fetched successfully', context, { serverId: id });
+      logger.debug('Server fetched successfully', { serverId: id });
       return NextResponse.json(server);
     }
 
     const servers = await repository.findAll();
-    logger.debug('Servers fetched successfully', context, { count: servers.length });
+    logger.debug('Servers fetched successfully', { count: servers.length });
     return NextResponse.json(servers);
   } catch (error) {
-    logger.error('Failed to fetch servers', error, context);
+    logger.error('Failed to fetch servers', error);
     return NextResponse.json(
       { error: 'Failed to fetch servers' },
       { status: 500 }
@@ -56,7 +56,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    logger.debug('Received create server request', context, { body });
+    logger.debug('Received create server request', { body });
 
     const validatedData = serverSchema.parse(body);
     
@@ -67,7 +67,7 @@ export async function POST(request: Request) {
     );
 
     if (existingServer) {
-      logger.warn('Server already exists', context, { 
+      logger.warn('Server already exists', { 
         host: validatedData.host, 
         port: validatedData.port 
       });
@@ -78,18 +78,18 @@ export async function POST(request: Request) {
     }
 
     const server = await repository.create(validatedData);
-    logger.info('Server created successfully', context, { serverId: server.id });
+    logger.info('Server created successfully', { serverId: server.id });
     return NextResponse.json(server, { status: 201 });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      logger.warn('Invalid server creation data', context, { error: error.errors });
+      logger.warn('Invalid server creation data', { error: error.errors });
       return NextResponse.json(
         { error: 'Invalid request data', details: error.errors },
         { status: 400 }
       );
     }
 
-    logger.error('Failed to create server', error, context);
+    logger.error('Failed to create server', error);
     return NextResponse.json(
       { error: 'Failed to create server' },
       { status: 500 }
@@ -100,10 +100,10 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   try {
     const body = await request.json();
-    logger.debug('Received update server request', context, { body });
+    logger.debug('Received update server request', { body });
 
     if (!body.id) {
-      logger.warn('Missing server id', context);
+      logger.warn('Missing server id');
       return NextResponse.json(
         { error: 'Server id is required' },
         { status: 400 }
@@ -115,7 +115,7 @@ export async function PUT(request: Request) {
     // Verificar si el servidor existe
     const existingServer = await repository.findById(body.id);
     if (!existingServer) {
-      logger.warn('Server not found', context, { serverId: body.id });
+      logger.warn('Server not found', { serverId: body.id });
       return NextResponse.json(
         { error: 'Server not found' },
         { status: 404 }
@@ -128,7 +128,7 @@ export async function PUT(request: Request) {
       validatedData.port
     );
     if (conflictingServer && conflictingServer.id !== body.id) {
-      logger.warn('Server host:port conflict', context, {
+      logger.warn('Server host:port conflict', {
         host: validatedData.host,
         port: validatedData.port,
         existingServerId: conflictingServer.id
@@ -140,18 +140,18 @@ export async function PUT(request: Request) {
     }
 
     const updatedServer = await repository.update(body.id, validatedData);
-    logger.info('Server updated successfully', context, { serverId: body.id });
+    logger.info('Server updated successfully', { serverId: body.id });
     return NextResponse.json(updatedServer);
   } catch (error) {
     if (error instanceof z.ZodError) {
-      logger.warn('Invalid server update data', context, { error: error.errors });
+      logger.warn('Invalid server update data', { error: error.errors });
       return NextResponse.json(
         { error: 'Invalid request data', details: error.errors },
         { status: 400 }
       );
     }
 
-    logger.error('Failed to update server', error, context);
+    logger.error('Failed to update server', error);
     return NextResponse.json(
       { error: 'Failed to update server' },
       { status: 500 }
@@ -165,7 +165,7 @@ export async function DELETE(request: Request) {
     const id = searchParams.get('id');
 
     if (!id) {
-      logger.warn('Missing server id', context);
+      logger.warn('Missing server id');
       return NextResponse.json(
         { error: 'Server id is required' },
         { status: 400 }
@@ -174,7 +174,7 @@ export async function DELETE(request: Request) {
 
     const server = await repository.findById(Number(id));
     if (!server) {
-      logger.warn('Server not found', context, { serverId: id });
+      logger.warn('Server not found', { serverId: id });
       return NextResponse.json(
         { error: 'Server not found' },
         { status: 404 }
@@ -182,10 +182,10 @@ export async function DELETE(request: Request) {
     }
 
     await repository.delete(Number(id));
-    logger.info('Server deleted successfully', context, { serverId: id });
+    logger.info('Server deleted successfully', { serverId: id });
     return NextResponse.json({ success: true });
   } catch (error) {
-    logger.error('Failed to delete server', error, context);
+    logger.error('Failed to delete server', error);
     return NextResponse.json(
       { error: 'Failed to delete server' },
       { status: 500 }

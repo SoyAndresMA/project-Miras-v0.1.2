@@ -3,8 +3,8 @@ import { LoggerService } from '@/lib/services/logger.service';
 import { ItemUnionRepository } from '../repositories/item-union.repository';
 import { z } from 'zod';
 
-const logger = LoggerService.getInstance();
 const context = 'ItemUnionsAPI';
+const logger = LoggerService.create(context);
 
 const createUnionSchema = z.object({
   name: z.string(),
@@ -22,13 +22,13 @@ export async function GET(request: Request) {
       ? await unionRepo.findByCompatibleType(type)
       : await unionRepo.findAll();
 
-    logger.debug('Item unions fetched successfully', context, { 
+    logger.debug('Item unions fetched successfully', { 
       type, 
       count: unions.length 
     });
     return NextResponse.json(unions);
   } catch (error) {
-    logger.error('Failed to fetch item unions', error, context);
+    logger.error('Failed to fetch item unions', error);
     return NextResponse.json(
       { error: 'Failed to fetch item unions' },
       { status: 500 }
@@ -39,7 +39,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    logger.debug('Received create union request', context, { body });
+    logger.debug('Received create union request', { body });
 
     const validatedData = createUnionSchema.parse(body);
     
@@ -50,18 +50,18 @@ export async function POST(request: Request) {
       description: validatedData.description || ''
     });
 
-    logger.info('Item union created successfully', context, { unionId: union.id });
+    logger.info('Item union created successfully', { unionId: union.id });
     return NextResponse.json(union);
   } catch (error) {
     if (error instanceof z.ZodError) {
-      logger.warn('Invalid union creation data', context, { error: error.errors });
+      logger.warn('Invalid union creation data', { error: error.errors });
       return NextResponse.json(
         { error: 'Invalid request data', details: error.errors },
         { status: 400 }
       );
     }
 
-    logger.error('Failed to create item union', error, context);
+    logger.error('Failed to create item union', error);
     return NextResponse.json(
       { error: 'Failed to create item union' },
       { status: 500 }
@@ -72,10 +72,10 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   try {
     const body = await request.json();
-    logger.debug('Received update union request', context, { body });
+    logger.debug('Received update union request', { body });
 
     if (!body.id) {
-      logger.warn('Missing union id', context);
+      logger.warn('Missing union id');
       return NextResponse.json(
         { error: 'Union id is required' },
         { status: 400 }
@@ -86,7 +86,7 @@ export async function PUT(request: Request) {
     const union = await unionRepo.findById(body.id);
 
     if (!union) {
-      logger.warn('Union not found', context, { unionId: body.id });
+      logger.warn('Union not found', { unionId: body.id });
       return NextResponse.json(
         { error: 'Union not found' },
         { status: 404 }
@@ -101,10 +101,10 @@ export async function PUT(request: Request) {
       description: body.description
     });
 
-    logger.info('Item union updated successfully', context, { unionId: body.id });
+    logger.info('Item union updated successfully', { unionId: body.id });
     return NextResponse.json(updatedUnion);
   } catch (error) {
-    logger.error('Failed to update item union', error, context);
+    logger.error('Failed to update item union', error);
     return NextResponse.json(
       { error: 'Failed to update item union' },
       { status: 500 }
@@ -118,7 +118,7 @@ export async function DELETE(request: Request) {
     const id = searchParams.get('id');
 
     if (!id) {
-      logger.warn('Missing union id', context);
+      logger.warn('Missing union id');
       return NextResponse.json(
         { error: 'Union id is required' },
         { status: 400 }
@@ -128,10 +128,10 @@ export async function DELETE(request: Request) {
     const unionRepo = ItemUnionRepository.getInstance();
     await unionRepo.delete(Number(id));
 
-    logger.info('Item union deleted successfully', context, { unionId: id });
+    logger.info('Item union deleted successfully', { unionId: id });
     return NextResponse.json({ success: true });
   } catch (error) {
-    logger.error('Failed to delete item union', error, context);
+    logger.error('Failed to delete item union', error);
     return NextResponse.json(
       { error: 'Failed to delete item union' },
       { status: 500 }

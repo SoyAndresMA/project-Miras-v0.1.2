@@ -34,7 +34,7 @@ const nextConfig = {
     maxInactiveAge: 25 * 1000,
     // Número de páginas que deben mantenerse en buffer
     pagesBufferLength: 2,
-  },
+  }
 }
 
 module.exports = nextConfig

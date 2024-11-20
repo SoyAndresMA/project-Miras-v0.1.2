@@ -3,9 +3,14 @@ import { MItem, CreateMItemInput } from '@/lib/types/item';
 import { LoggerService } from '@/lib/services/logger.service';
 
 export abstract class ItemRepository<T extends MItem, C extends CreateMItemInput> extends BaseRepository {
-  protected readonly logger = LoggerService.getInstance();
   protected abstract readonly context: string;
   protected abstract readonly tableName: string;
+  protected readonly logger: LoggerService;
+
+  constructor() {
+    super();
+    this.logger = LoggerService.create(this.context);
+  }
 
   async findByEventId(eventId: number): Promise<T[]> {
     this.logger.debug('Fetching items by event ID', this.context, { eventId });

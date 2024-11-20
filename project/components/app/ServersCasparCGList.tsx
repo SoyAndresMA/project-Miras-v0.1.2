@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React from 'react';
 import { DeviceConfig } from '@/lib/types/device';
 import { Button } from '@/components/ui/button';
 import { Loader2, Plus, Server, Wifi, WifiOff } from 'lucide-react';
@@ -32,25 +32,18 @@ export const ServersCasparCGList: React.FC<ServersCasparCGListProps> = ({
   onConnectServer,
 }) => {
   const { toast } = useToast();
-
-  // Crear estados para cada servidor
-  const serverStates = Object.fromEntries(
-    servers.map(server => [
-      server.id,
-      useServerState(server.id)
-    ])
-  );
+  const serverState = useServerState();
 
   const handleServerDoubleClick = async (server: DeviceConfig) => {
-    if (!serverStates[server.id]?.state?.connected) {
+    if (!serverState.servers.find(s => s.id === server.id)?.connected) {
       try {
         await onConnectServer(server);
       } catch (error) {
         console.error('Error connecting to server:', error);
         toast({
           title: "Error",
-          description: "No se pudo conectar al servidor",
-          variant: "destructive",
+          description: error instanceof Error ? error.message : "Failed to connect to server",
+          variant: "destructive"
         });
       }
     }
@@ -74,8 +67,8 @@ export const ServersCasparCGList: React.FC<ServersCasparCGListProps> = ({
       {/* Server List */}
       <div className="grid gap-4">
         {servers.map((server) => {
-          const { state, error } = serverStates[server.id] || {};
-          const isConnected = state?.connected ?? false;
+          const serverInfo = serverState.servers.find(s => s.id === server.id);
+          const isConnected = serverInfo?.connected ?? false;
           const isSelected = selectedServer?.id === server.id;
           
           return (
@@ -101,7 +94,7 @@ export const ServersCasparCGList: React.FC<ServersCasparCGListProps> = ({
                 </div>
 
                 <div className="flex items-center space-x-2">
-                  {error ? (
+                  {serverInfo?.error ? (
                     <TooltipProvider>
                       <Tooltip>
                         <TooltipTrigger>
@@ -110,7 +103,7 @@ export const ServersCasparCGList: React.FC<ServersCasparCGListProps> = ({
                           </Badge>
                         </TooltipTrigger>
                         <TooltipContent>
-                          <p>{error}</p>
+                          <p>{serverInfo.error}</p>
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>

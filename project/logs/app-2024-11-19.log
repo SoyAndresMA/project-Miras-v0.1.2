@@ -1,0 +1,15 @@
+[2024-11-19T22:39:13.750Z] DEBUG [AppInitializerService]: Initializing application...
+[2024-11-19T22:39:13.751Z] INFO [[object Object]]: Initializing database connection
+[2024-11-19T22:39:13.751Z] DEBUG [ItemUnionRepository]: Fetching all item unions
+[2024-11-19T22:39:13.858Z] INFO [AppInitializerService]: Application initialized successfully
+[2024-11-19T22:39:14.391Z] DEBUG [AppInitializerService]: Initializing application...
+[2024-11-19T22:39:14.392Z] INFO [[object Object]]: Initializing database connection
+[2024-11-19T22:39:14.392Z] DEBUG [ItemUnionRepository]: Fetching all item unions
+[2024-11-19T22:39:14.487Z] INFO [AppInitializerService]: Application initialized successfully
+[2024-11-19T22:40:07.383Z] DEBUG [AppInitializerService]: Initializing application...
+[2024-11-19T22:40:07.384Z] INFO [[object Object]]: Initializing database connection
+[2024-11-19T22:40:07.384Z] DEBUG [ItemUnionRepository]: Fetching all item unions
+[2024-11-19T22:40:07.849Z] INFO [AppInitializerService]: Application initialized successfully
+[2024-11-19T22:40:13.022Z] DEBUG [AppInitializerService]: Initializing application...
+[2024-11-19T22:40:13.022Z] DEBUG [ItemUnionRepository]: Fetching all item unions
+[2024-11-19T22:40:13.028Z] INFO [AppInitializerService]: Application initialized successfully

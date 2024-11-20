@@ -10,127 +10,105 @@ interface ServerState {
 }
 
 export class CasparServerRepository extends BaseRepository<DeviceConfig> {
+  private static instance: CasparServerRepository;
+
+  private constructor() {
+    super('CasparServerRepository');
+  }
+
+  public static getInstance(): CasparServerRepository {
+    if (!CasparServerRepository.instance) {
+      CasparServerRepository.instance = new CasparServerRepository();
+    }
+    return CasparServerRepository.instance;
+  }
+
   async findById(id: number): Promise<DeviceConfig | null> {
-    const db = await this.getDb();
-    const server = await db.get(
+    this.logger.debug('Finding server by ID', { id });
+    const servers = await this.query<DeviceConfig>(
       'SELECT * FROM casparcg_servers WHERE id = ?',
-      id
+      [id]
     );
-
-    if (!server) return null;
-
-    return this.mapToDeviceConfig(server);
+    return servers[0] || null;
   }
 
   async findAll(): Promise<DeviceConfig[]> {
-    const db = await this.getDb();
-    const servers = await db.all(
+    this.logger.debug('Finding all servers');
+    return this.query<DeviceConfig>(
       'SELECT * FROM casparcg_servers ORDER BY name'
     );
-
-    return servers.map(this.mapToDeviceConfig);
   }
 
   async create(data: Omit<DeviceConfig, 'id'>): Promise<DeviceConfig> {
+    this.logger.info('Creating new server', { data });
     return this.transaction(async (db) => {
-      const { lastID } = await db.run(`
-        INSERT INTO casparcg_servers (
+      const { lastID } = await db.run(
+        `INSERT INTO casparcg_servers (
           name, host, port, description,
           username, password, preview_channel,
           locked_channel, is_shadow, enabled,
           command_timeout
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, [
-        data.name,
-        data.host,
-        data.port,
-        data.description || null,
-        data.username || null,
-        data.password || null,
-        data.preview_channel || null,
-        data.locked_channel || null,
-        data.is_shadow ? 1 : 0,
-        data.enabled ? 1 : 0,
-        data.command_timeout || 5000
-      ]);
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          data.name,
+          data.host,
+          data.port,
+          data.description || null,
+          data.username || null,
+          data.password || null,
+          data.preview_channel || null,
+          data.locked_channel || null,
+          data.is_shadow || false,
+          data.enabled !== undefined ? data.enabled : true,
+          data.command_timeout || 5000
+        ]
+      );
 
       const server = await this.findById(lastID);
-      if (!server) throw new Error('Failed to create server');
+      if (!server) {
+        throw new Error('Failed to create server');
+      }
       return server;
     });
   }
 
   async update(id: number, data: Partial<DeviceConfig>): Promise<DeviceConfig> {
+    this.logger.info('Updating server', { id, data });
     return this.transaction(async (db) => {
-      const currentServer = await this.findById(id);
-      if (!currentServer) throw new Error('Server not found');
+      const setClauses: string[] = [];
+      const values: any[] = [];
 
-      const updates = [];
-      const values = [];
+      Object.entries(data).forEach(([key, value]) => {
+        if (value !== undefined) {
+          setClauses.push(`${key} = ?`);
+          values.push(value);
+        }
+      });
 
-      if (data.name !== undefined) {
-        updates.push('name = ?');
-        values.push(data.name);
-      }
-      if (data.host !== undefined) {
-        updates.push('host = ?');
-        values.push(data.host);
-      }
-      if (data.port !== undefined) {
-        updates.push('port = ?');
-        values.push(data.port);
-      }
-      if (data.description !== undefined) {
-        updates.push('description = ?');
-        values.push(data.description);
-      }
-      if (data.username !== undefined) {
-        updates.push('username = ?');
-        values.push(data.username);
-      }
-      if (data.password !== undefined) {
-        updates.push('password = ?');
-        values.push(data.password);
-      }
-      if (data.preview_channel !== undefined) {
-        updates.push('preview_channel = ?');
-        values.push(data.preview_channel);
-      }
-      if (data.locked_channel !== undefined) {
-        updates.push('locked_channel = ?');
-        values.push(data.locked_channel);
-      }
-      if (data.is_shadow !== undefined) {
-        updates.push('is_shadow = ?');
-        values.push(data.is_shadow ? 1 : 0);
-      }
-      if (data.enabled !== undefined) {
-        updates.push('enabled = ?');
-        values.push(data.enabled ? 1 : 0);
-      }
-      if (data.command_timeout !== undefined) {
-        updates.push('command_timeout = ?');
-        values.push(data.command_timeout);
+      if (setClauses.length === 0) {
+        return (await this.findById(id))!;
       }
 
-      if (updates.length > 0) {
-        await db.run(`
-          UPDATE casparcg_servers
-          SET ${updates.join(', ')}
-          WHERE id = ?
-        `, [...values, id]);
-      }
+      values.push(id);
+      await db.run(
+        `UPDATE casparcg_servers SET ${setClauses.join(', ')} WHERE id = ?`,
+        values
+      );
 
-      const updatedServer = await this.findById(id);
-      if (!updatedServer) throw new Error('Server not found after update');
-      return updatedServer;
+      const server = await this.findById(id);
+      if (!server) {
+        throw new Error('Server not found after update');
+      }
+      return server;
     });
   }
 
   async delete(id: number): Promise<void> {
-    return this.transaction(async (db) => {
-      await db.run('DELETE FROM casparcg_servers WHERE id = ?', id);
-    });
+    this.logger.info('Deleting server', { id });
+    await this.execute(
+      'DELETE FROM casparcg_servers WHERE id = ?',
+      [id]
+    );
   }
 
   async updateServerState(serverId: string, state: ServerState): Promise<void> {

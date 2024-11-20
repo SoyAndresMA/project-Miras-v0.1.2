@@ -3,8 +3,8 @@ import { LoggerService } from '@/lib/services/logger.service';
 import { EventRepository } from '../repositories/event.repository';
 import { z } from 'zod';
 
-const logger = LoggerService.getInstance();
 const context = 'EventsAPI';
+const logger = LoggerService.create(context);
 
 const createEventSchema = z.object({
   project_id: z.number(),
@@ -25,7 +25,7 @@ export async function GET(request: Request) {
     const projectId = searchParams.get('project_id');
 
     if (!projectId) {
-      logger.warn('Missing project_id parameter', context);
+      logger.warn('Missing project_id parameter', { projectId });
       return NextResponse.json(
         { error: 'project_id is required' },
         { status: 400 }
@@ -35,13 +35,10 @@ export async function GET(request: Request) {
     const eventRepo = EventRepository.getInstance();
     const events = await eventRepo.findByProjectId(Number(projectId));
 
-    logger.debug('Events fetched successfully', context, { 
-      projectId, 
-      count: events.length 
-    });
+    logger.debug('Events fetched successfully', { projectId, count: events.length });
     return NextResponse.json(events);
   } catch (error) {
-    logger.error('Failed to fetch events', error, context);
+    logger.error('Failed to fetch events', error);
     return NextResponse.json(
       { error: 'Failed to fetch events' },
       { status: 500 }
@@ -52,25 +49,25 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    logger.debug('Received create event request', context, { body });
+    logger.debug('Received create event request', { body });
 
     const validatedData = createEventSchema.parse(body);
     
     const eventRepo = EventRepository.getInstance();
     const event = await eventRepo.create(validatedData);
 
-    logger.info('Event created successfully', context, { eventId: event.id });
+    logger.info('Event created successfully', { eventId: event.id });
     return NextResponse.json(event, { status: 201 });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      logger.warn('Invalid event creation data', context, { error: error.errors });
+      logger.warn('Invalid event creation data', { error: error.errors });
       return NextResponse.json(
         { error: 'Invalid request data', details: error.errors },
         { status: 400 }
       );
     }
 
-    logger.error('Failed to create event', error, context);
+    logger.error('Failed to create event', error);
     return NextResponse.json(
       { error: 'Failed to create event' },
       { status: 500 }
@@ -81,7 +78,7 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   try {
     const body = await request.json();
-    logger.debug('Received update event request', context, { body });
+    logger.debug('Received update event request', { body });
 
     const validatedData = updateEventSchema.parse(body);
     
@@ -89,7 +86,7 @@ export async function PUT(request: Request) {
     const event = await eventRepo.findById(validatedData.id);
 
     if (!event) {
-      logger.warn('Event not found', context, { eventId: validatedData.id });
+      logger.warn('Event not found', { eventId: validatedData.id });
       return NextResponse.json(
         { error: 'Event not found' },
         { status: 404 }
@@ -98,18 +95,18 @@ export async function PUT(request: Request) {
 
     const updatedEvent = await eventRepo.update(validatedData.id, validatedData);
 
-    logger.info('Event updated successfully', context, { eventId: validatedData.id });
+    logger.info('Event updated successfully', { eventId: validatedData.id });
     return NextResponse.json(updatedEvent);
   } catch (error) {
     if (error instanceof z.ZodError) {
-      logger.warn('Invalid event update data', context, { error: error.errors });
+      logger.warn('Invalid event update data', { error: error.errors });
       return NextResponse.json(
         { error: 'Invalid request data', details: error.errors },
         { status: 400 }
       );
     }
 
-    logger.error('Failed to update event', error, context);
+    logger.error('Failed to update event', error);
     return NextResponse.json(
       { error: 'Failed to update event' },
       { status: 500 }
@@ -123,7 +120,7 @@ export async function DELETE(request: Request) {
     const id = searchParams.get('id');
 
     if (!id) {
-      logger.warn('Missing event id', context);
+      logger.warn('Missing event id');
       return NextResponse.json(
         { error: 'Event id is required' },
         { status: 400 }
@@ -134,7 +131,7 @@ export async function DELETE(request: Request) {
     const event = await eventRepo.findById(Number(id));
 
     if (!event) {
-      logger.warn('Event not found', context, { eventId: id });
+      logger.warn('Event not found', { eventId: id });
       return NextResponse.json(
         { error: 'Event not found' },
         { status: 404 }
@@ -143,10 +140,10 @@ export async function DELETE(request: Request) {
 
     await eventRepo.delete(Number(id));
 
-    logger.info('Event deleted successfully', context, { eventId: id });
+    logger.info('Event deleted successfully', { eventId: id });
     return NextResponse.json({ success: true });
   } catch (error) {
-    logger.error('Failed to delete event', error, context);
+    logger.error('Failed to delete event', error);
     return NextResponse.json(
       { error: 'Failed to delete event' },
       { status: 500 }

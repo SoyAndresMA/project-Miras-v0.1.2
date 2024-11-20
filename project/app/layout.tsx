@@ -2,7 +2,7 @@ import './globals.css';
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import { MainLayout } from '@/components/layouts/MainLayout';
-import { AppInitializerService } from '@/server/services/AppInitializerService';
+import { initializeServer } from './actions/server';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -11,22 +11,17 @@ export const metadata: Metadata = {
   description: 'A modern project management tool',
 };
 
-async function getInitialState() {
-  const initializer = AppInitializerService.getInstance();
-  return initializer.initialize();
-}
-
 export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const initialState = await getInitialState();
+  const serverState = await initializeServer();
 
   return (
     <html lang="en">
       <body className={inter.className}>
-        <MainLayout initialState={initialState}>
+        <MainLayout serverState={serverState}>
           {children}
         </MainLayout>
       </body>
